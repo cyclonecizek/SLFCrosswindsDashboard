@@ -560,10 +560,10 @@ function histData() {
   TOWERS.forEach((T, k) => {
     const by=new Map([...(S.series?.[T.id]||[]),...(S.hist[T.id]||[])].map(o=>[o.t,o]));
     const src = [...by.values()].sort((a,b)=>a.t-b.t);
-    let pts = src.filter(o => o.t >= since - S.hSm * 60e3).map(o => ({ t: o.t, v: compOf(o, "tower") })).filter(p => p.v != null);
+    let pts = src.filter(o => o.t >= since - S.hSm * 60e3).map(o => ({ t: o.t, v: compOf(o, "tower"), approximate:!!obsWind(o,"tower")?.approximate })).filter(p => p.v != null);
     if (S.hSm > 1) {   // highest value (largest size, sign kept) in the trailing window, minute data only
       const win = S.hSm * 60e3, q = [];
-      pts = pts.map(p => { q.push(p); while (q[0].t <= p.t - win) q.shift(); const m = q.reduce((a, b) => Math.abs(b.v) > Math.abs(a.v) ? b : a); return { t: p.t, v: m.v, at: m.t }; });
+      pts = pts.map(p => { q.push(p); while (q[0].t <= p.t - win) q.shift(); const m = q.reduce((a, b) => Math.abs(b.v) > Math.abs(a.v) ? b : a); return { t: p.t, v: m.v, at: m.t, approximate:m.approximate }; });
     }
     out.push({ key: T.id, name: `${T.id} ${T.name.toLowerCase()}`, k, pts: pts.filter(p => p.t >= since) });
   });
@@ -605,13 +605,14 @@ function renderHist() {
   $("#histLg").innerHTML = lines.map(l => l.key === "ktts" ? `<span style="color:var(--line)"><i class="sq" style="background:var(--line)"></i>KTTS reports</span>` : `<span style="color:var(${TCOL[l.k]})"><i class="${TLG[l.k]}" style="background:var(${TCOL[l.k]})"></i>${esc(l.name)}</span>`).join("") + `<span style="color:var(--severe)"><i class="dash"></i>Your limit</span><span>${esc(compName)}, ${S.basis === "gust" ? "one-minute peaks" : "one-minute means"}${S.hSm > 1 ? `, highest in the previous ${S.hSm} minutes` : ""}${S.basis === "gust" ? "; KTTS gust when reported" : ""}, kt</span>`;
   $("#histMax").innerHTML = lines.filter(l => l.pts.length).map(l => { const m = l.pts.reduce((a, p) => Math.abs(p.v) > Math.abs(a.v) ? p : a); return `<span>${esc(l.key === "ktts" ? "KTTS" : l.key)} highest <b>${Math.round(Math.abs(m.v))} kt</b> at ${esc(hm(m.at ?? m.t))}</span>`; }).join("");
   const n = lines.slice(0, 3).reduce((a, l) => a + l.pts.length, 0);
+  const approximated=lines.some(l=>l.pts.some(p=>p.approximate));
   const first=lines.slice(0,3).flatMap(l=>l.pts).reduce((a,p)=>Math.min(a,p.t),Infinity);
-  $("#histNote").textContent=n?`Available tower history begins ${whenText(first)}. Empty periods have no published observations. History builds toward 12 hours through the existing Weather COP job.`:"No tower observations available in this period yet.";
+  $("#histNote").textContent=n?`Available tower history begins ${whenText(first)}. Empty periods have no published observations. History builds toward 12 hours through the existing Weather COP job.${approximated?" Some historical peak components are approximate because only mean direction was available.":""}`:"No tower observations available in this period yet.";
   const pick = ev => {
     const r = svg.getBoundingClientRect(), t = since + ((ev.clientX - r.left) / r.width * W - L) / (W - L - Rr) * (now - since);
     const vals = lines.map(l => { let b = null; for (const p of l.pts) if (!b || Math.abs(p.t - t) < Math.abs(b.t - t)) b = p; return b && Math.abs(b.t - t) <= (l.key === "ktts" ? 40 : 3) * 60e3 ? [l, b] : null; }).filter(Boolean);
     const cur = $("#hcur"); cur.setAttribute("x1", x(t)); cur.setAttribute("x2", x(t)); cur.setAttribute("visibility", "visible");
-    $("#histRd").innerHTML = `<b>${esc(hm(t))}</b> &nbsp; ` + (vals.length ? vals.map(([l, p]) => `<span style="color:${l.key === "ktts" ? "var(--line)" : `var(${TCOL[l.k]})`}">${esc(l.key === "ktts" ? "KTTS" : l.key)} <b>${Math.round(p.v)}</b> kt</span>`).join(" &nbsp; ") : `<span class="hint">no readings</span>`);
+    $("#histRd").innerHTML = `<b>${esc(hm(t))}</b> &nbsp; ` + (vals.length ? vals.map(([l, p]) => `<span style="color:${l.key === "ktts" ? "var(--line)" : `var(${TCOL[l.k]})`}">${esc(l.key === "ktts" ? "KTTS" : l.key)} <b>${p.approximate?"≈":""}${Math.round(p.v)}</b> kt</span>`).join(" &nbsp; ") : `<span class="hint">no readings</span>`);
   };
   $("#hhit").addEventListener("pointermove", pick); $("#hhit").addEventListener("pointerdown", pick);
   $("#hhit").addEventListener("pointerleave", () => { $("#hcur").setAttribute("visibility", "hidden"); $("#histRd").innerHTML = `<span class="hint">Hover or tap the chart for readings.</span>`; });

@@ -14,6 +14,7 @@
   --slight: #3a9a5b; --marginal: #e7b416; --severe: #cc3d31;
   --hires: #1d6fb8; --blend: #8a4fbf; --global: #7a8896; --line: #16202b;
   --xw: #1d6fb8; --hw: #b0611c; --tw: #7a8896;
+  --t1: #1d6fb8; --t2: #c2621e; --t3: #8a4fbf;
   --font: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
@@ -23,6 +24,7 @@
     --slight: #3fae63; --marginal: #f0c23a; --severe: #e2574b;
     --hires: #4b9be0; --blend: #b27be3; --global: #8795a3; --line: #f3f6f8;
     --xw: #4b9be0; --hw: #e0904a; --tw: #8795a3;
+    --t1: #4b9be0; --t2: #e8925a; --t3: #b27be3;
     color-scheme: dark;
   }
 }
@@ -30,7 +32,7 @@
   --bg: #0f151c; --panel: #17202a; --ink: #e4e9ee; --muted: #93a1ae; --rule: #2a3642; --rule2: #202b36;
   --slight: #3fae63; --marginal: #f0c23a; --severe: #e2574b;
   --hires: #4b9be0; --blend: #b27be3; --global: #8795a3; --line: #f3f6f8;
-  --xw: #4b9be0; --hw: #e0904a; --tw: #8795a3;
+  --xw: #4b9be0; --hw: #e0904a; --tw: #8795a3; --t1: #4b9be0; --t2: #e8925a; --t3: #b27be3;
   color-scheme: dark;
 }
 :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -108,8 +110,6 @@ table.obs tr[aria-selected="true"] td { background: color-mix(in srgb, var(--hir
 table.obs td.over { color: var(--severe); font-weight: 700; }
 table.obs td.raw { white-space: normal; color: var(--muted); font-size: 13px; }
 .obs-scroll { overflow-x: auto; }
-.spark { width: 100%; height: 78px; display: block; }
-.spark .lim { stroke-dasharray: 4 4; }
 details.cfg > summary { cursor: pointer; color: var(--muted); font-weight: 500; }
 details.cfg .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
 details.cfg input[type=url] { flex: 1 1 320px; min-width: 0; background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 5px 8px; }
@@ -127,6 +127,10 @@ svg.ch .cur { stroke: var(--ink); stroke-width: 1; }
 .lg i { display: inline-block; width: 16px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 .lg i.dash { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px) !important; height: 2px; }
 .rd { min-height: 22px; font-size: 14.5px; }
+.hmax { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 14px; color: var(--muted); margin-top: 2px; }
+.hmax b { color: var(--ink); font-weight: 600; }
+.lg i.dot2 { background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px) !important; height: 3px; }
+.lg i.sq { width: 9px; height: 9px; border-radius: 1px; }
 .rd b { font-weight: 700; }
 
 /* block grid */
@@ -252,11 +256,6 @@ ul.src .meta { color: var(--muted); font-size: 13px; }
         <div class="comps" id="comps"></div>
         <div class="wline" id="wline"></div>
         <div class="models" id="modelsNow"></div>
-        <div>
-          <div class="lg" id="sparkLg"></div>
-          <svg class="spark" id="spark" viewBox="0 0 600 78" preserveAspectRatio="none" role="img" aria-label="Components since this page opened"></svg>
-          <div class="hint" id="sparkMsg"></div>
-        </div>
       </div>
     </div>
     <div class="obs-scroll" style="margin-top:12px">
@@ -264,13 +263,34 @@ ul.src .meta { color: var(--muted); font-size: 13px; }
     </div>
     <details class="cfg" id="cfg" style="margin-top:10px">
       <summary>Live data settings</summary>
-      <div class="hint" style="margin-top:6px">Tower data comes from the WINDS one-minute API on the RAD. The page tries, in order: the minute data service below (the ER Weather COP’s Cloudflare worker), the RAD API directly, then the COP’s GitHub snapshot, which refreshes about every 5 minutes. KTTS comes from api.weather.gov, with aviationweather.gov as the backup.</div>
+      <div class="hint" style="margin-top:6px">Tower data comes from the WINDS one-minute API on the RAD. The page tries, in order: the runway winds service (this repo’s Cloudflare worker, which also keeps the last 24 hours), the ER Weather COP’s minute service, the RAD API directly, then the COP’s GitHub snapshot, which refreshes about every 5 minutes. KTTS comes from api.weather.gov, with aviationweather.gov as the backup.</div>
       <div class="row">
-        <input type="url" id="endpoint" placeholder="https://er-weather-cop-data.your-subdomain.workers.dev" aria-label="Minute data service URL">
+        <label class="hint" for="svc" style="flex:0 0 170px">Runway winds service</label>
+        <input type="url" id="svc" placeholder="https://slf-runway-winds.your-subdomain.workers.dev" aria-label="Runway winds service URL">
+        <button class="btn ghost" id="svcSave" type="button">Save</button>
+      </div>
+      <div class="row">
+        <label class="hint" for="endpoint" style="flex:0 0 170px">COP minute service</label>
+        <input type="url" id="endpoint" placeholder="https://er-weather-cop-data.your-subdomain.workers.dev" aria-label="COP minute service URL">
         <button class="btn ghost" id="endpointSave" type="button">Save</button>
       </div>
       <div class="hint" id="endpointNote"></div>
     </details>
+  </section>
+
+  <section class="card" id="histCard" aria-labelledby="histH">
+    <h2 id="histH">Last hours
+      <span class="r">
+        <span class="seg" id="hsmSeg" role="group" aria-label="Tower values"><button type="button" data-s="10">10-min highest</button><button type="button" data-s="1">Every minute</button></span>
+        <span class="seg" id="hcompSeg" role="group" aria-label="Component"><button type="button" data-c="xw">Crosswind</button><button type="button" data-c="al">Head/tailwind</button></span>
+        <span class="seg" id="hhrsSeg" role="group" aria-label="Hours shown"><button type="button" data-h="2">2 h</button><button type="button" data-h="4">4 h</button><button type="button" data-h="6">6 h</button><button type="button" data-h="12">12 h</button></span>
+      </span>
+    </h2>
+    <div class="lg" id="histLg"></div>
+    <div class="chartwrap"><svg class="ch" id="hist" viewBox="0 0 1000 250" role="img" aria-label="Tower wind components over the last hours"></svg></div>
+    <div class="rd" id="histRd" aria-live="polite"></div>
+    <div class="hmax" id="histMax"></div>
+    <div class="hint" id="histNote"></div>
   </section>
 
   <section class="card" id="chartCard" aria-labelledby="chartH">
@@ -330,7 +350,7 @@ ul.src .meta { color: var(--muted); font-size: 13px; }
 
 <div class="method">
   <p><b>Components.</b> The angle is the wind direction minus the runway heading (true). Crosswind is wind × |sin(angle)|; the along-runway part is wind × cos(angle), a headwind when positive and a tailwind when negative. <b>Either end</b> checks both runway ends at once, the way the 7-Day board does: any wind along the runway is a headwind on one end and a tailwind on the other, so the headwind and tailwind limits are compared with its size.</p>
-  <p><b>Observations.</b> Towers 0511, 0512 and 0513 line the runway and measure at 30 ft. <b>Peak / gust</b> uses the one-minute peak with its direction; <b>Sustained</b> uses the one-minute mean. KTTS uses the reported gust when there is one, otherwise the sustained wind. A variable wind is treated as fully across and along the runway. The chart under the readouts keeps the readings collected while this page is open.</p>
+  <p><b>Observations.</b> Towers 0511, 0512 and 0513 line the runway and measure at 30 ft. <b>Peak / gust</b> uses the one-minute peak with its direction; <b>Sustained</b> uses the one-minute mean. KTTS uses the reported gust when there is one, otherwise the sustained wind. A variable wind is treated as fully across and along the runway. <b>Last hours</b> draws every one-minute tower reading kept by the runway winds service (it stores 24 hours) with each KTTS report as a square; without the service it shows what this page has collected since it opened.</p>
   <p><b>Forecast.</b> Every member of every source on the 7-Day board is judged each hour against your limits, using its 10 m gust (or sustained wind) and direction. A source’s chance is the share of its members over a limit; the blend weights sources the same way the board does. For a block or window, a member counts once if any hour it has in it breaks a limit, and it has to cover at least half the window’s hours. Hi-res models reach about 2 days; after that the global ensembles and blends carry the forecast. Values are rounded to the nearest 5%.</p>
 </div>
 
@@ -344,6 +364,8 @@ const COP_SNAPSHOT = "https://raw.githubusercontent.com/cyclonecizek/ER_Weather_
 const RAD_LATEST = "https://codiapi-winds1.rad.spaceforce.mil/winds/latest";
 const NWS_KTTS = "https://api.weather.gov/stations/KTTS/observations/latest";
 const AWC_KTTS = "https://aviationweather.gov/api/data/metar?ids=KTTS&format=json";
+const NWS_KTTS_HIST = "https://api.weather.gov/stations/KTTS/observations";
+const SVC_HOURS = 12;
 const TOWERS = [{ id: "0511", name: "South end" }, { id: "0512", name: "Midfield" }, { id: "0513", name: "North end" }];
 const FAMS = [["hires", "Hi-res"], ["blend", "Blends"], ["global", "Global ensembles"]];
 const LIVE_MS = 60e3, BOARD_MS = 10 * 60e3, STALE_MIN = 90, OBS_STALE_MIN = 15, H = 3600;
@@ -365,7 +387,7 @@ const S = {
   rwy: "either", basis: "gust", zone: "local", obsSrc: "worst", layout: "3h", view: "prob",
   win: { a: null, b: null }, sel: null,
   live: { towers: {}, ktts: null, via: null, tried: [], err: null, at: null }, hist: {}, directFailAt: 0,
-  endpoint: "", calc: null, hover: null
+  endpoint: "", svc: "", calc: null, hover: null, series: null, kttsHist: [], kttsHistAt: 0, hHours: 4, hComp: "xw", hSm: 10
 };
 
 // ---------- time
@@ -677,12 +699,27 @@ function pickTowers(rows) {
   }
   return out;
 }
+function svcBase(v) { try { const u = new URL(v); if (u.protocol !== "https:") return null; u.pathname = u.pathname.replace(/\/(api\/towers|health)?\/?$/, ""); u.search = ""; u.hash = ""; return u.toString().replace(/\/$/, ""); } catch { return null; } }
+async function fetchService() {
+  const j = await getJSON(`${S.svc}/api/towers?hours=${SVC_HOURS}&t=${Math.floor(Date.now() / 60e3)}`, 12000);
+  if (!j || !j.towers) throw new Error("unexpected response");
+  const series = {}, latest = {};
+  for (const T of TOWERS) {
+    series[T.id] = (j.towers[T.id] || []).map(([t, dir, spd, pk, pkdir, hgt]) => ({ id: T.id, t, dir, spd, pk, pkdir, hgt }));
+    const last = series[T.id][series[T.id].length - 1]; if (last) latest[T.id] = last;
+  }
+  if (!Object.keys(latest).length) throw new Error(j.poll_ok === false ? "service can’t reach the RAD" : "no readings stored yet");
+  return { towers: latest, series };
+}
 async function fetchTowers() {
-  const tries = [];
+  const tries = [], tried = [];
+  if (S.svc) {
+    try { const r = await fetchService(); return { towers: r.towers, series: r.series, via: "runway winds service", tried }; }
+    catch (e) { tried.push(`runway winds service: ${e.name === "AbortError" ? "timed out" : e.message}`); }
+  }
   if (S.endpoint) tries.push(["minute data service", S.endpoint + (S.endpoint.includes("?") ? "&" : "?") + "t=" + Date.now(), j => j && j.feeds && j.feeds.winds && j.feeds.winds.rows]);
   if (Date.now() - S.directFailAt > 15 * 60e3) tries.push(["RAD API", RAD_LATEST, j => Array.isArray(j) ? j : null, true]);
   tries.push(["COP snapshot", COP_SNAPSHOT + "?t=" + Math.floor(Date.now() / 60e3), j => j && j.feeds && j.feeds.winds && j.feeds.winds.rows]);
-  const tried = [];
   for (const [name, url, rowsOf, direct] of tries) {
     try {
       const j = await getJSON(url, direct ? 6000 : 10000), tw = pickTowers(rowsOf(j));
@@ -705,10 +742,17 @@ async function fetchKTTS() {
     return { t: (o.obsTime || 0) * 1000, spd: o.wspd ?? null, gst: o.wgst ?? null, dir: vrb ? null : o.wdir ?? null, vrb, raw: o.rawOb || "", via: "aviationweather.gov" };
   }
 }
+async function fetchKTTSHist() {
+  const start = new Date(Date.now() - SVC_HOURS * 3600e3).toISOString().slice(0, 19) + "Z";
+  const j = await getJSON(`${NWS_KTTS_HIST}?start=${start}&limit=100`, 15000, { headers: { Accept: "application/geo+json" } });
+  const cv = q => { if (!q || q.value == null) return null; const u = q.unitCode || ""; return /km_h/.test(u) ? q.value * 0.539957 : /m_s/.test(u) ? q.value * 1.943844 : q.value; };
+  return (j.features || []).map(f => f.properties || {}).map(p => { const spd = cv(p.windSpeed), dir = p.windDirection ? p.windDirection.value : null; return { t: Date.parse(p.timestamp), spd, gst: cv(p.windGust), dir, vrb: spd > 0 && dir == null }; })
+    .filter(o => Number.isFinite(o.t) && o.spd != null).sort((a, b) => a.t - b.t);
+}
 async function refreshLive() {
   $("#liveRefresh").disabled = true;
   const [tw, k] = await Promise.allSettled([fetchTowers(), fetchKTTS()]);
-  if (tw.status === "fulfilled") { S.live.towers = tw.value.towers; S.live.via = tw.value.via; S.live.err = null; S.live.tried = tw.value.tried; }
+  if (tw.status === "fulfilled") { S.live.towers = tw.value.towers; S.live.via = tw.value.via; S.live.err = null; S.live.tried = tw.value.tried; S.series = tw.value.series || null; }
   else { S.live.err = tw.reason.tried || [tw.reason.message]; }
   if (k.status === "fulfilled") { S.live.ktts = k.value; S.live.kErr = null; } else S.live.kErr = k.reason.message;
   S.live.at = Date.now();
@@ -716,7 +760,8 @@ async function refreshLive() {
   const entries = [...TOWERS.map(T => [T.id, S.live.towers[T.id]]), ["ktts", S.live.ktts]];
   for (const [key, o] of entries) { if (!o) continue; const h = S.hist[key] = S.hist[key] || []; if (!h.length || h[h.length - 1].t !== o.t) { h.push(o); if (h.length > 240) h.shift(); } }
   $("#liveRefresh").disabled = false;
-  renderLive();
+  if (Date.now() - S.kttsHistAt > 10 * 60e3) { S.kttsHistAt = Date.now(); fetchKTTSHist().then(h => { S.kttsHist = h; renderHist(); }).catch(() => { S.kttsHistAt = Date.now() - 8 * 60e3; }); }
+  renderLive(); renderHist();
 }
 // wind used for an observation under the current basis
 function obsWind(o, kind) {
@@ -757,7 +802,7 @@ function renderLive() {
   if (!cur || !cur.e) {
     const msg = S.obsSrc === "ktts" ? `KTTS observation unavailable${S.live.kErr ? ` (${esc(S.live.kErr)})` : ""}.` : S.live.err ? `Tower data unavailable. Tried ${esc(S.live.err.join("; "))}. Add the minute data service under Live data settings, or switch to KTTS.` : S.live.at ? "No reading from that tower in the latest data. Pick another tower or KTTS." : "Loading observations";
     st.className = "status none"; st.innerHTML = `<i aria-hidden="true"></i><span>${S.live.at ? "No observation" : "Loading observations"}</span>`;
-    comp.innerHTML = `<div class="hint">${msg}</div>`; $("#wline").innerHTML = ""; drawRose(null); renderObsTable(); renderModelsNow(); renderSpark(null); return;
+    comp.innerHTML = `<div class="hint">${msg}</div>`; $("#wline").innerHTML = ""; drawRose(null); renderObsTable(); renderModelsNow(); return;
   }
   const { e, o } = cur, age = (Date.now() - o.t) / 60000, stale = age > OBS_STALE_MIN;
   // in "worst of" mode every tower counts toward the status; the readouts show the tower closest to (or furthest over) a limit
@@ -781,7 +826,7 @@ function renderLive() {
   const kind = cur.key === "ktts" ? "ktts" : "tower";
   const used = kind === "ktts" ? (e.ww.gustUsed ? "gust" : "sustained wind") : S.basis === "gust" ? "one-minute peak" : "one-minute mean";
   $("#wline").innerHTML = `<b>${esc(cur.name)}</b>${kind === "tower" ? ` (${esc(TOWERS.find(t => t.id === cur.key).name.toLowerCase())}, ${o.hgt ?? 30} ft)` : ""}: <b>${esc(windTxt(o, kind))}</b>, using the ${used}. <span class="${stale ? "" : "hint"}" style="${stale ? "color:var(--severe);font-weight:600" : ""}">${esc(hm(o.t))}, ${esc(ago(o.t))}${stale ? ", stale" : ""}</span>`;
-  drawRose(e); renderObsTable(); renderModelsNow(); renderSpark(cur.key);
+  drawRose(e); renderObsTable(); renderModelsNow();
 }
 function renderObsTable() {
   const L = S.lim, rows = [];
@@ -810,18 +855,74 @@ function renderModelsNow() {
   const i = C.tindex.get(Math.floor(Date.now() / 1000 / H) * H); if (i == null || C.Q.xw[1][i] == null) { el.innerHTML = ""; return; }
   el.innerHTML = `Guidance for this hour: crosswind <b>${kt(C.Q.xw[1][i])} kt</b> (members ${kt(C.Q.xw[0][i])}–${kt(C.Q.xw[2][i])}), ${S.rwy === "either" ? "along runway" : "headwind on " + S.rwy} <b>${kt(C.Q.al[1][i])} kt</b>, chance of breaking a limit <b>${C.P.any[i] == null ? "–" : r5(C.P.any[i]) + "%"}</b>.`;
 }
-function renderSpark(key) {
-  const svg = $("#spark"), col = COLORS(), h = key ? (S.hist[key] || []) : [];
-  if (h.length < 2) { svg.innerHTML = ""; svg.style.display = "none"; $("#sparkMsg").textContent = key ? "A trend of this observation builds here while the page stays open." : ""; $("#sparkLg").innerHTML = ""; return; }
-  svg.style.display = ""; $("#sparkMsg").textContent = "";
-  const pts = h.map(o => { const ww = obsWind(o, key === "ktts" ? "ktts" : "tower"); if (!ww || ww.w == null) return null; const c = ww.w < 0.5 ? { xw: 0, along: 0, vrb: false } : comps(ww.w, ww.d); return { t: o.t, xw: c.xw, al: S.rwy === "either" || c.vrb ? Math.abs(c.along) : c.along }; }).filter(Boolean);
-  const t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 60e3), W = 600, Hh = 78;
-  const vmax = Math.max(S.lim.xw * 1.15, (S.lim.hw ?? 0) * 1.1, ...pts.map(p => Math.max(p.xw, Math.abs(p.al)))), vmin = S.rwy === "either" ? 0 : Math.min(0, ...pts.map(p => p.al), S.lim.tw != null ? -S.lim.tw : 0);
-  const x = t => 4 + (t - t0) / (t1 - t0) * (W - 8), y = v => 4 + (1 - (v - vmin) / (vmax - vmin)) * (Hh - 8);
-  const line = (k, c) => `<polyline fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke" points="${pts.map(p => `${x(p.t).toFixed(1)},${y(p[k]).toFixed(1)}`).join(" ")}"/>`;
-  const lim = (v, c) => v == null ? "" : `<line class="lim" x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="${c}" vector-effect="non-scaling-stroke"/>`;
-  svg.innerHTML = lim(S.lim.xw, col.xw) + lim(S.lim.hw, col.hw) + (S.lim.tw != null && S.rwy !== "either" ? lim(-S.lim.tw, col.tw) : "") + (vmin < 0 ? `<line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="${css("--rule")}" vector-effect="non-scaling-stroke"/>` : "") + line("al", col.hw) + line("xw", col.xw);
-  $("#sparkLg").innerHTML = `<span><i style="background:${col.xw}"></i>Crosswind</span><span><i style="background:${col.hw}"></i>${S.rwy === "either" ? "Along runway" : "Head (+) / tail (−)"}</span><span>${esc(hm(t0))} to ${esc(hm(pts[pts.length - 1].t))}, ${pts.length} readings</span>`;
+// ---------- last hours: tower components (minute data) with KTTS reports
+const TCOL = ["--t1", "--t2", "--t3"], TDASH = ["", "8 5", "2 4"], TLG = ["", "dash", "dot2"];
+function compOf(o, kind) {
+  const ww = obsWind(o, kind); if (!ww || ww.w == null) return null;
+  if (ww.w < 0.5) return 0;
+  const c = comps(ww.w, ww.d);
+  return S.hComp === "xw" ? c.xw : (S.rwy === "either" || c.vrb ? Math.abs(c.along) : c.along);
+}
+function histData() {
+  const now = Date.now(), since = now - S.hHours * 3600e3, out = [];
+  TOWERS.forEach((T, k) => {
+    const src = S.series ? S.series[T.id] || [] : S.hist[T.id] || [];
+    let pts = src.filter(o => o.t >= since - S.hSm * 60e3).map(o => ({ t: o.t, v: compOf(o, "tower") })).filter(p => p.v != null);
+    if (S.hSm > 1) {   // highest value (largest size, sign kept) in the trailing window, minute data only
+      const win = S.hSm * 60e3, q = [];
+      pts = pts.map(p => { q.push(p); while (q[0].t <= p.t - win) q.shift(); const m = q.reduce((a, b) => Math.abs(b.v) > Math.abs(a.v) ? b : a); return { t: p.t, v: m.v, at: m.t }; });
+    }
+    out.push({ key: T.id, name: `${T.id} ${T.name.toLowerCase()}`, k, pts: pts.filter(p => p.t >= since) });
+  });
+  const kh = (S.kttsHist.length ? S.kttsHist : S.hist.ktts || []).filter(o => o.t >= since);
+  out.push({ key: "ktts", name: "KTTS", k: 3, pts: kh.map(o => ({ t: o.t, v: compOf(o, "ktts") })).filter(p => p.v != null) });
+  return { since, now, lines: out };
+}
+function renderHist() {
+  const svg = $("#hist"); if (!svg) return;
+  document.querySelectorAll("#hhrsSeg button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.h === S.hHours));
+  document.querySelectorAll("#hcompSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.c === S.hComp));
+  document.querySelectorAll("#hsmSeg button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.s === S.hSm));
+  const { since, now, lines } = histData(), W = 1000, Hh = 250, L = 44, Rr = 14, T = 12, Bm = 34;
+  const all = lines.flatMap(l => l.pts.map(p => p.v));
+  const signed = S.hComp === "al" && S.rwy !== "either";
+  const lim = S.hComp === "xw" ? [S.lim.xw] : signed ? [S.lim.hw, S.lim.tw != null ? -S.lim.tw : null] : [S.lim.hw, S.lim.tw];
+  const ymax = Math.ceil(Math.max(10, ...all, ...lim.filter(v => v != null).map(v => v * 1.15)) / 5) * 5;
+  const ymin = signed ? -Math.ceil(Math.max(5, ...all.map(v => -v), ...(S.lim.tw != null ? [S.lim.tw * 1.15] : [])) / 5) * 5 : 0;
+  const x = t => L + (t - since) / (now - since) * (W - L - Rr), y = v => T + (1 - (v - ymin) / (ymax - ymin)) * (Hh - T - Bm);
+  let g = "";
+  const step = ymax - ymin > 40 ? 10 : 5;
+  for (let v = Math.ceil(ymin / step) * step; v <= ymax; v += step) g += `<line class="gr" x1="${L}" x2="${W - Rr}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  if (ymin < 0) g += `<line x1="${L}" x2="${W - Rr}" y1="${y(0)}" y2="${y(0)}" stroke="${css("--muted")}"/>`;
+  const tickM = S.hHours <= 2 ? 15 : S.hHours <= 6 ? 30 : 60, every = S.hHours === 12 ? 2 : S.hHours === 6 ? 2 : 1;
+  let tk = 0;
+  for (let t = Math.ceil(since / (tickM * 60e3)) * tickM * 60e3; t <= now; t += tickM * 60e3, tk++) g += `<line class="day" x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${Hh - Bm}" opacity=".5"/>${tk % every ? "" : `<text class="ax" x="${x(t)}" y="${Hh - Bm + 18}" text-anchor="middle">${esc(hm(t))}</text>`}`;
+  for (const v of lim) if (v != null && v >= ymin && v <= ymax) g += `<line x1="${L}" x2="${W - Rr}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--severe")}" stroke-width="1.5" stroke-dasharray="7 5"/>`;
+  for (const l of lines) {
+    if (!l.pts.length) continue;
+    if (l.key === "ktts") { for (const p of l.pts) g += `<rect x="${x(p.t) - 5}" y="${y(p.v) - 5}" width="10" height="10" fill="${css("--line")}" stroke="${css("--panel")}" stroke-width="1.5"/>`; continue; }
+    let d = "", prev = null;
+    for (const p of l.pts) { d += `${prev && p.t - prev.t <= 6 * 60e3 ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`; prev = p; }
+    if (l.pts.length === 1) { const p = l.pts[0]; g += `<circle cx="${x(p.t)}" cy="${y(p.v)}" r="3.5" fill="${css(TCOL[l.k])}"/>`; }
+    g += `<path d="${d}" fill="none" stroke="${css(TCOL[l.k])}" stroke-width="${S.hSm > 1 ? 2.25 : 1.4}" ${TDASH[l.k] ? `stroke-dasharray="${TDASH[l.k]}"` : ""} stroke-linejoin="round"/>`;
+  }
+  g += `<line class="cur" id="hcur" x1="0" x2="0" y1="${T}" y2="${Hh - Bm}" visibility="hidden"/><rect id="hhit" x="${L}" y="0" width="${W - L - Rr}" height="${Hh}" fill="transparent"/>`;
+  svg.innerHTML = g;
+  const compName = S.hComp === "xw" ? "Crosswind" : S.rwy === "either" ? "Along runway (either end)" : `Headwind on ${S.rwy} (below zero: tailwind)`;
+  $("#histLg").innerHTML = lines.map(l => l.key === "ktts" ? `<span style="color:var(--line)"><i class="sq" style="background:var(--line)"></i>KTTS reports</span>` : `<span style="color:var(${TCOL[l.k]})"><i class="${TLG[l.k]}" style="background:var(${TCOL[l.k]})"></i>${esc(l.name)}</span>`).join("") + `<span style="color:var(--severe)"><i class="dash"></i>Your limit</span><span>${esc(compName)}, ${S.basis === "gust" ? "one-minute peaks" : "one-minute means"}${S.hSm > 1 ? `, highest in the previous ${S.hSm} minutes` : ""}${S.basis === "gust" ? "; KTTS gust when reported" : ""}, kt</span>`;
+  $("#histMax").innerHTML = lines.filter(l => l.pts.length).map(l => { const m = l.pts.reduce((a, p) => Math.abs(p.v) > Math.abs(a.v) ? p : a); return `<span>${esc(l.key === "ktts" ? "KTTS" : l.key)} highest <b>${Math.round(Math.abs(m.v))} kt</b> at ${esc(hm(m.at ?? m.t))}</span>`; }).join("");
+  const n = lines.slice(0, 3).reduce((a, l) => a + l.pts.length, 0);
+  $("#histNote").textContent = S.series ? (n ? "" : "The runway winds service has no readings for this period yet.") :
+    `Showing tower readings collected since this page opened${S.live.via === "COP snapshot" ? " (about one every 5 minutes)" : ""}. Add the runway winds service under Live data settings for the last ${SVC_HOURS} hours of one-minute data.`;
+  const pick = ev => {
+    const r = svg.getBoundingClientRect(), t = since + ((ev.clientX - r.left) / r.width * W - L) / (W - L - Rr) * (now - since);
+    const vals = lines.map(l => { let b = null; for (const p of l.pts) if (!b || Math.abs(p.t - t) < Math.abs(b.t - t)) b = p; return b && Math.abs(b.t - t) <= (l.key === "ktts" ? 40 : 3) * 60e3 ? [l, b] : null; }).filter(Boolean);
+    const cur = $("#hcur"); cur.setAttribute("x1", x(t)); cur.setAttribute("x2", x(t)); cur.setAttribute("visibility", "visible");
+    $("#histRd").innerHTML = `<b>${esc(hm(t))}</b> &nbsp; ` + (vals.length ? vals.map(([l, p]) => `<span style="color:${l.key === "ktts" ? "var(--line)" : `var(${TCOL[l.k]})`}">${esc(l.key === "ktts" ? "KTTS" : l.key)} <b>${Math.round(p.v)}</b> kt</span>`).join(" &nbsp; ") : `<span class="hint">no readings</span>`);
+  };
+  $("#hhit").addEventListener("pointermove", pick); $("#hhit").addEventListener("pointerdown", pick);
+  $("#hhit").addEventListener("pointerleave", () => { $("#hcur").setAttribute("visibility", "hidden"); $("#histRd").innerHTML = `<span class="hint">Hover or tap the chart for readings.</span>`; });
+  if (!$("#histRd").innerHTML) $("#histRd").innerHTML = `<span class="hint">Hover or tap the chart for readings.</span>`;
 }
 function drawRose(e) {
   const svg = $("#rose"), col = COLORS(), cx = 150, cy = 150, R = 118, hdg = S.board ? S.board.runway_heading_true : 330;
@@ -866,7 +967,7 @@ function header() {
   $("#banners").innerHTML = b;
   $("#where").innerHTML = `Runway 15/33 at ${String(B.runway_heading_true).padStart(3, "0")}° true. Live towers 0511–0513 and KTTS, plus a 7-day chance of breaking your crosswind and headwind limits. <a href="https://cyclonecizek.github.io/SLFWeather/">7-Day Constraint Probabilities</a>`;
 }
-function renderAll() { renderGrid(); renderChart(); renderWin(); renderLive(); }
+function renderAll() { renderGrid(); renderChart(); renderWin(); renderLive(); renderHist(); }
 
 // ---------- settings
 function readLim() {
@@ -890,13 +991,21 @@ function bind() {
   let t; const onLim = () => { clearTimeout(t); t = setTimeout(() => { readLim(); recompute(); }, 250); };
   for (const id of ["#limXw", "#limHw", "#limTw"]) { $(id).addEventListener("input", onLim); $(id).addEventListener("change", () => { readLim(); limUI(); recompute(); }); }
   $("#limReset").addEventListener("click", () => { S.lim = { ...S.std }; store.set("winds.lim", null); limUI(); recompute(); renderLive(); });
-  $("#rwy").addEventListener("change", e => { S.rwy = e.target.value; store.set("winds.rwy", S.rwy); if (S.board) recompute(); else renderLive(); });
-  $("#basis").addEventListener("change", e => { S.basis = e.target.value; store.set("winds.basis", S.basis); if (S.board) { renderSources(); recompute(); } else renderLive(); });
+  $("#rwy").addEventListener("change", e => { S.rwy = e.target.value; store.set("winds.rwy", S.rwy); if (S.board) recompute(); else { renderLive(); renderHist(); } });
+  $("#basis").addEventListener("change", e => { S.basis = e.target.value; store.set("winds.basis", S.basis); if (S.board) { renderSources(); recompute(); } else { renderLive(); renderHist(); } });
   $("#obsSrc").addEventListener("change", e => { S.obsSrc = e.target.value; store.set("winds.obs", S.obsSrc); renderLive(); });
   $("#layout").addEventListener("change", e => { S.layout = e.target.value; S.sel = null; store.set("winds.layout", S.layout); renderGrid(); });
   $("#zoneSeg").addEventListener("click", e => { const b = e.target.closest("[data-z]"); if (!b) return; S.zone = b.dataset.z; store.set("winds.zone", S.zone); S.sel = null; segUI(); setWin(S.win.a, S.win.b, false); renderAll(); });
   $("#viewSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b) return; S.view = b.dataset.v; segUI(); renderChart(); });
   $("#liveRefresh").addEventListener("click", refreshLive);
+  $("#hhrsSeg").addEventListener("click", e => { const b = e.target.closest("[data-h]"); if (!b) return; S.hHours = +b.dataset.h; store.set("winds.hhrs", String(S.hHours)); renderHist(); });
+  $("#hsmSeg").addEventListener("click", e => { const b = e.target.closest("[data-s]"); if (!b) return; S.hSm = +b.dataset.s; store.set("winds.hsm", String(S.hSm)); renderHist(); });
+  $("#hcompSeg").addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; S.hComp = b.dataset.c; store.set("winds.hcomp", S.hComp); renderHist(); });
+  $("#svcSave").addEventListener("click", () => {
+    const raw = $("#svc").value.trim(), v = raw ? svcBase(raw) : "";
+    if (v === null) { $("#endpointNote").textContent = "Enter the service’s full https:// address."; return; }
+    S.svc = v; $("#svc").value = v; store.set("winds.svc", v || null); S.series = null; refreshLive();
+  });
   const onWin = () => { S.sel = null; setWin(fromInput($("#wcStart").value), fromInput($("#wcEnd").value)); renderGrid(); };
   $("#wcStart").addEventListener("change", onWin); $("#wcEnd").addEventListener("change", onWin);
   $("#quick").addEventListener("click", e => { const b = e.target.closest("[data-q]"); if (!b) return; const a = Math.floor(Date.now() / 3600e3) * 3600e3; S.sel = null; setWin(a, a + (+b.dataset.q) * 3600e3); renderGrid(); });
@@ -940,6 +1049,11 @@ async function loadBoard(first) {
   let ep = store.get("winds.endpoint");
   if (ep == null) { try { ep = (JSON.parse(store.get("er-cop-settings") || "{}").dataEndpoint) || ""; } catch { ep = ""; } }
   S.endpoint = ep || "";
+  S.svc = svcBase(store.get("winds.svc") || "") || "";
+  S.hHours = [2, 4, 6, 12].includes(+store.get("winds.hhrs")) ? +store.get("winds.hhrs") : 4;
+  S.hComp = store.get("winds.hcomp") === "al" ? "al" : "xw";
+  S.hSm = store.get("winds.hsm") === "1" ? 1 : 10;
+  $("#svc").value = S.svc;
   $("#endpoint").value = S.endpoint; $("#rwy").value = S.rwy; $("#basis").value = S.basis; $("#obsSrc").value = S.obsSrc; $("#layout").value = S.layout;
   segUI(); bind(); drawRose(null);
   let w = null; try { w = JSON.parse(store.get("winds.win") || "null"); } catch {}

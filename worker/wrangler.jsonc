@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "slf-runway-winds",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-10-16",
+  "workers_dev": true,
+  // One trigger: polls the towers every minute and starts the workflows in DISPATCH on their minutes.
+  "triggers": { "crons": ["* * * * *"] },
+  "durable_objects": { "bindings": [{ "name": "TOWERS", "class_name": "TowerStore" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TowerStore"] }],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://cyclonecizek.github.io",
+    // owner/repo/workflow-file@minutes (UTC). Add more entries separated by spaces.
+    "DISPATCH": "cyclonecizek/SLFWeather/update.yml@25"
+  },
+  "observability": { "enabled": true }
+}

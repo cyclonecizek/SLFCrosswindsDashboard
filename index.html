@@ -289,7 +289,7 @@ ul.src .meta { color: var(--muted); font-size: 13px; }
 </div>
 
 <script type="module">
-import {compactSeries, dataHealth, observationFresh} from "./live-data.mjs?v=live-20261102";
+import {compactSeries, dataHealth, observationFresh, TOWER_MAX_AGE} from "./live-data.mjs?v=stale15-20261102";
 "use strict";
 const COP_BASE = "https://cyclonecizek.github.io/ER_Weather_COP/data/";
 const RAW_BASE = "https://raw.githubusercontent.com/cyclonecizek/ER_Weather_COP/main/dist/data/";
@@ -652,10 +652,10 @@ function drawRose(e) {
 
 function header(){
   const t=Date.parse(S.live.generatedAt),age=Date.now()-t;
-  $("#fresh").className="fresh"+(age>5*60000?" stale":"");
+  $("#fresh").className="fresh"+(age>TOWER_MAX_AGE?" stale":"");
   $("#fresh").textContent=Number.isFinite(t)?`COP published ${hm(t)} · ${ago(t)}`:"Waiting for observations";
   const health=dataHealth(S.live.towers,'worst',S.live.sourceStatus,S.live.generatedAt);
-  const msg=S.live.err?'Tower update failed. Showing the last available observations.':!health.ok?`Tower coverage incomplete${health.missing.length?": "+health.missing.join(", ")+" missing or older than 5 minutes":"; the source is delayed or reporting an error"}.`:'';
+  const msg=S.live.err?'Tower update failed. Showing the last available observations.':!health.ok?`Tower coverage incomplete${health.missing.length?": "+health.missing.join(", ")+" missing or older than 15 minutes":"; the source is delayed or reporting an error"}.`:'';
   $("#banners").innerHTML=msg?`<div class="banner bad">${esc(msg)}</div>`:'';
 }
 function renderAll(){header();renderLive();renderHist();}

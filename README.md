@@ -39,10 +39,10 @@ every minute and its 12-hour report history every 10 minutes.
 
 ## Data quality
 
-Towers older than five minutes, missing towers, future timestamps, source
+Towers older than 15 minutes, missing towers, future timestamps, source
 errors, and stale publication times prevent a healthy tower status. The
 worst-tower readout prefers current observations. Retained readings are
-identified as stale. KTTS reports use a separate 90-minute freshness limit.
+identified as stale. The same 15-minute freshness limit applies to KTTS reports. Exactly 15 minutes old is still current.
 
 One-minute peaks use peak direction where available. If peak direction is
 missing, the mean direction is used with an approximate-component label.

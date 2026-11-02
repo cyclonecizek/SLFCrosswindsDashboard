@@ -1,8 +1,8 @@
 export const TOWER_IDS = ['0511','0512','0513'];
-export const TOWER_MAX_AGE = 5 * 60000;
+export const TOWER_MAX_AGE = 15 * 60000;
 export function observationFresh(row, kind='tower', now=Date.now()) {
   const age=now-row?.t;
-  return Number.isFinite(age) && age>=-120000 && age<=(kind==='ktts'?90*60000:TOWER_MAX_AGE);
+  return Number.isFinite(age) && age>=-120000 && age<=TOWER_MAX_AGE;
 }
 export function dataHealth(towers, selected, sourceStatus, generatedAt, now=Date.now()) {
   const ids=selected==='worst'?TOWER_IDS:[selected];

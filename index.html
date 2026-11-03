@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SLF Runway Winds</title>
+<title>SLF Runway Winds (experimental)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -67,6 +67,10 @@ a.btn { text-decoration: none; display: inline-block; }
 .hint { color: var(--muted); font-size: 13.5px; }
 .banner { margin: 12px 20px 0; padding: 8px 12px; border-left: 4px solid var(--marginal); background: var(--panel); }
 .banner.bad { border-color: var(--severe); }
+.caveat { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 20px; background: color-mix(in srgb, var(--marginal) 26%, var(--panel)); border-bottom: 2px solid var(--marginal); font-size: 15.5px; }
+.caveat strong { font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--marginal); color: #1b1300; padding: 2px 8px; border-radius: 3px; }
+.caveat a { color: inherit; font-weight: 700; white-space: nowrap; }
+@media print { .caveat { background: none; border: 2px solid #000; } .caveat strong { background: none; border: 1px solid #000; } }
 
 .wrap { padding: 16px 20px 0; display: flex; flex-direction: column; gap: 18px; }
 .card { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; min-width: 0; }
@@ -201,10 +205,14 @@ ul.src .meta { color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
+<div class="caveat" role="note" aria-label="Experimental product">
+  <strong>Experimental</strong>
+  <span>This page is experimental and not operational. Verify all data with the 45th Weather Squadron Duty Forecaster at <a href="tel:+13218538485">321-853-8485</a>.</span>
+</div>
 <header class="top">
   <div>
     <h1>SLF Runway Winds</h1>
-    <div class="where" id="where">Runway 15/33 at 330° true. Current tower winds, KTTS reports, and observation history.</div>
+    <div class="where" id="where">Runway 15/33. Live towers and KTTS, plus a 7-day chance of breaking your crosswind and headwind limits. <a href="https://cyclonecizek.github.io/SLFWeather/">7-Day Constraint Probabilities</a></div>
   </div>
   <div class="fresh" id="fresh"></div>
 </header>
@@ -255,14 +263,27 @@ ul.src .meta { color: var(--muted); font-size: 13px; }
         <div class="status none" id="status"><i aria-hidden="true"></i><span>Loading observations</span></div>
         <div class="comps" id="comps"></div>
         <div class="wline" id="wline"></div>
-
+        <div class="models" id="modelsNow"></div>
       </div>
     </div>
     <div class="obs-scroll" style="margin-top:12px">
       <table class="obs" id="obsTable" aria-label="Latest observations"></table>
     </div>
-    <div class="hint" id="endpointNote" style="margin-top:10px"></div>
-    <p class="hint">Tower observations update through the Weather COP collector. This page checks for updates every 60 seconds.</p>
+    <details class="cfg" id="cfg" style="margin-top:10px">
+      <summary>Live data settings</summary>
+      <div class="hint" style="margin-top:6px">Tower data comes from the WINDS one-minute API on the RAD. The page tries, in order: the runway winds service (this repo’s Cloudflare worker, which also keeps the last 24 hours), the ER Weather COP’s minute service, the RAD API directly, then the COP’s GitHub snapshot, which refreshes about every 5 minutes. KTTS comes from api.weather.gov, with aviationweather.gov as the backup.</div>
+      <div class="row">
+        <label class="hint" for="svc" style="flex:0 0 170px">Runway winds service</label>
+        <input type="url" id="svc" placeholder="https://slf-runway-winds.your-subdomain.workers.dev" aria-label="Runway winds service URL">
+        <button class="btn ghost" id="svcSave" type="button">Save</button>
+      </div>
+      <div class="row">
+        <label class="hint" for="endpoint" style="flex:0 0 170px">COP minute service</label>
+        <input type="url" id="endpoint" placeholder="https://er-weather-cop-data.your-subdomain.workers.dev" aria-label="COP minute service URL">
+        <button class="btn ghost" id="endpointSave" type="button">Save</button>
+      </div>
+      <div class="hint" id="endpointNote"></div>
+    </details>
   </section>
 
   <section class="card" id="histCard" aria-labelledby="histH">
@@ -280,28 +301,82 @@ ul.src .meta { color: var(--muted); font-size: 13px; }
     <div class="hint" id="histNote"></div>
   </section>
 
+  <section class="card" id="chartCard" aria-labelledby="chartH">
+    <h2 id="chartH">Next 7 days
+      <span class="r">
+        <span class="seg" id="viewSeg" role="group" aria-label="Chart"><button type="button" data-v="prob">Chance of violation</button><button type="button" data-v="comp">Wind components</button></span>
+      </span>
+    </h2>
+    <div class="lg" id="chartLg"></div>
+    <div class="chartwrap"><svg class="ch" id="chart" viewBox="0 0 1000 280" role="img" aria-label="Hourly forecast chart"></svg></div>
+    <div class="rd" id="readout" aria-live="polite"></div>
+  </section>
+
+  <section class="card" aria-labelledby="gridH">
+    <h2 id="gridH">Chance of violation by block
+      <span class="r">
+        <label class="hint" style="display:inline-flex;gap:6px;align-items:center">Blocks
+          <select id="layout" aria-label="Time blocks">
+            <option value="3h">3-hour</option>
+            <option value="6h">6-hour</option>
+            <option value="std">7-Day windows (00–11, 11–18, 18–24)</option>
+          </select>
+        </label>
+      </span>
+    </h2>
+    <div class="grid-scroll"><table class="g" id="grid"></table></div>
+    <table class="g leg" aria-hidden="true"><tr><td class="s">Slight &lt;20%</td><td class="m">Marginal 20–50%</td><td class="v">Significant &gt;50%</td></tr></table>
+    <div class="hint" style="margin-top:6px">Each value is the chance the limit is broken at some point during the block. Click a value to check that block below.</div>
+  </section>
+
+  <section class="card" id="wcCard" aria-labelledby="wcH">
+    <h2 id="wcH">Check a window</h2>
+    <div class="wc">
+      <div class="inputs">
+        <label><span id="wcStartL">Start</span><input type="datetime-local" id="wcStart" step="3600"></label>
+        <label><span id="wcEndL">End</span><input type="datetime-local" id="wcEnd" step="3600"></label>
+        <div class="quick" id="quick">
+          <button type="button" data-q="3">Next 3 h</button>
+          <button type="button" data-q="6">Next 6 h</button>
+          <button type="button" data-q="12">Next 12 h</button>
+          <button type="button" data-q="24">Next 24 h</button>
+        </div>
+        <button class="btn ghost" id="wcCopy" type="button">Copy summary</button>
+        <span class="hint" id="wcCopied" aria-live="polite"></span>
+      </div>
+      <div id="wcOut"></div>
+    </div>
+  </section>
+
+  <section class="card" id="srcCard" aria-labelledby="srcH">
+    <h2 id="srcH">Guidance sources</h2>
+    <div class="fams" id="fams"></div>
+    <ul class="src" id="srclist"></ul>
+    <div class="hint" style="margin-top:6px">Same models, members and weights as the 7-Day board. Sources you switch off here stay off on this page only.</div>
+  </section>
 </main>
 
 <div class="method">
-  <p>Components use wind direction and runway headings in degrees true. Crosswind is wind speed × |sin(angle)|. The along-runway component is a headwind when positive and a tailwind when negative. Either end compares the magnitude against both enabled along-runway limits.</p>
-  <p>Towers 0511, 0512, and 0513 use the exact 30 ft level. Peak / gust uses the one-minute peak and its direction. If peak direction is missing, the component uses the mean direction and is marked approximate. KTTS uses its reported gust when available. Unknown wind direction is treated as fully across and along the runway.</p>
-  <p>The 10-min highest option shows the largest component observed in the preceding 10 minutes. It is calculated from the available one-minute records. Missing periods remain gaps. Limits are display settings saved in this browser.</p>
+  <p><b>Components.</b> The angle is the wind direction minus the runway heading (true). Crosswind is wind × |sin(angle)|; the along-runway part is wind × cos(angle), a headwind when positive and a tailwind when negative. <b>Either end</b> checks both runway ends at once, the way the 7-Day board does: any wind along the runway is a headwind on one end and a tailwind on the other, so the headwind and tailwind limits are compared with its size.</p>
+  <p><b>Observations.</b> Towers 0511, 0512 and 0513 line the runway and measure at 30 ft. <b>Peak / gust</b> uses the one-minute peak with its direction; <b>Sustained</b> uses the one-minute mean. KTTS uses the reported gust when there is one, otherwise the sustained wind. A variable wind is treated as fully across and along the runway. <b>Last hours</b> draws every one-minute tower reading kept by the runway winds service (it stores 24 hours) with each KTTS report as a square; without the service it shows what this page has collected since it opened.</p>
+  <p><b>Forecast.</b> Every member of every source on the 7-Day board is judged each hour against your limits, using its 10 m gust (or sustained wind) and direction. A source’s chance is the share of its members over a limit; the blend weights sources the same way the board does. For a block or window, a member counts once if any hour it has in it breaks a limit, and it has to cover at least half the window’s hours. Hi-res models reach about 2 days; after that the global ensembles and blends carry the forecast. Values are rounded to the nearest 5%.</p>
 </div>
 
-<script type="module">
-import {compactSeries, dataHealth, observationFresh, TOWER_MAX_AGE} from "./live-data.mjs?v=stale15-20261102";
+<script>
 "use strict";
-const COP_BASE = "https://cyclonecizek.github.io/ER_Weather_COP/data/";
-const RAW_BASE = "https://raw.githubusercontent.com/cyclonecizek/ER_Weather_COP/main/dist/data/";
-const HISTORY_URLS = [COP_BASE + "slf-winds.json", RAW_BASE + "slf-winds.json"];
-const SNAPSHOT_URLS = [COP_BASE + "latest.json", RAW_BASE + "latest.json"];
+// Guidance comes from the SLFWeather repo's hourly pipeline (the 7-Day board). The page tries the
+// published site first, then the same file on GitHub's raw server.
+const BOARD_SITE = "https://cyclonecizek.github.io/SLFWeather/";
+const DATA_URLS = [BOARD_SITE + "data/board.json", "https://raw.githubusercontent.com/cyclonecizek/SLFWeather/main/docs/data/board.json"];
+const COP_SNAPSHOT = "https://raw.githubusercontent.com/cyclonecizek/ER_Weather_COP/main/dist/data/latest.json";
+const RAD_LATEST = "https://codiapi-winds1.rad.spaceforce.mil/winds/latest";
 const NWS_KTTS = "https://api.weather.gov/stations/KTTS/observations/latest";
 const AWC_KTTS = "https://aviationweather.gov/api/data/metar?ids=KTTS&format=json";
 const NWS_KTTS_HIST = "https://api.weather.gov/stations/KTTS/observations";
 const SVC_HOURS = 12;
 const TOWERS = [{ id: "0511", name: "South end" }, { id: "0512", name: "Midfield" }, { id: "0513", name: "North end" }];
 const FAMS = [["hires", "Hi-res"], ["blend", "Blends"], ["global", "Global ensembles"]];
-const LIVE_MS = 60e3, H = 3600;
+const LIVE_MS = 60e3, BOARD_MS = 10 * 60e3, STALE_MIN = 90, OBS_STALE_MIN = 15, H = 3600;
 const $ = s => document.querySelector(s);
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -316,10 +391,11 @@ const CATNAME = { s: "Slight", m: "Marginal", v: "Significant", na: "" };
 const kt = v => v == null ? "–" : String(Math.round(v));
 
 const S = {
-  lim: {xw:10, hw:15, tw:null}, std:{xw:10, hw:15, tw:null},
-  rwy:"either", basis:"gust", zone:"local", obsSrc:"worst",
-  live:{towers:{},ktts:null,via:null,err:null,at:null,sourceStatus:null,generatedAt:null},
-  hist:{},series:null,kttsHist:[],kttsHistAt:0,hHours:4,hComp:"xw",hSm:10,busy:false
+  board: null, enabled: {}, lim: { xw: 10, hw: 15, tw: null }, std: { xw: 10, hw: 15, tw: null },
+  rwy: "either", basis: "gust", zone: "local", obsSrc: "worst", layout: "3h", view: "prob",
+  win: { a: null, b: null }, sel: null,
+  live: { towers: {}, ktts: null, via: null, tried: [], err: null, at: null }, hist: {}, directFailAt: 0,
+  endpoint: "", svc: "", calc: null, hover: null, series: null, kttsHist: [], kttsHistAt: 0, hHours: 4, hComp: "xw", hSm: 10
 };
 
 // ---------- time
@@ -345,7 +421,7 @@ function fromInput(v) { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exe
 
 // ---------- wind components
 const norm = a => ((a % 360) + 540) % 360 - 180;            // (-180, 180]
-function landHdg() { const h = 330; return S.rwy === "15" ? (h + 180) % 360 : h; }
+function landHdg() { const h = S.board ? S.board.runway_heading_true : 330; return S.rwy === "15" ? (h + 180) % 360 : h; }
 function comps(w, d) {
   if (w == null) return null;
   if (d == null) return { xw: w, along: w, rel: null, vrb: true };   // variable: full across and along
@@ -374,9 +450,243 @@ function limitText() {
 }
 const rwyText = () => S.rwy === "either" ? "either runway end" : `runway ${S.rwy}`;
 
-const COLORS = () => ({any:css("--line"),xw:css("--xw"),hw:css("--hw"),tw:css("--tw")});
-// ---------- live observations
+// ---------- forecast math
+function stepHours(times, arr) {
+  const idx = []; arr.forEach((x, i) => { if (x != null) idx.push(times[i]); });
+  if (idx.length < 2) return 1;
+  const gaps = idx.slice(1).map((t, i) => (t - idx[i]) / 3600).sort((a, b) => a - b);
+  return Math.min(6, Math.max(1, gaps[Math.floor(gaps.length / 2)]));
+}
+const VKEY = () => S.basis === "gust" ? "gst" : "spd";
+const usable = s => s.members.length && s.members.some(m => m.v && m.v.dir && m.v[VKEY()]);
+function wq(pairs, q) {            // weighted quantile
+  if (!pairs.length) return null;
+  pairs.sort((a, b) => a[0] - b[0]); const tot = pairs.reduce((s, p) => s + p[1], 0); let c = 0;
+  for (const [v, w] of pairs) { c += w; if (c >= q * tot - 1e-9) return v; }
+  return pairs[pairs.length - 1][0];
+}
+function recompute() {
+  const B = S.board; if (!B) { renderLive(); return; }
+  const T = B.times.length, srcs = B.sources.filter(s => usable(s) && S.enabled[s.id]);
+  for (const s of srcs) for (const m of s.members) {
+    const w = m.v[VKEY()], d = m.v.dir;
+    m.F = new Int8Array(T).fill(-1); m.XW = new Float32Array(T).fill(NaN); m.AL = new Float32Array(T).fill(NaN);
+    m.stepW = w ? stepHours(B.times, w) : 1;
+    if (!w || !d) continue;
+    for (let i = 0; i < T; i++) {
+      if (w[i] == null || d[i] == null) continue;
+      const c = comps(w[i], d[i]); m.F[i] = flags(c); m.XW[i] = c.xw;
+      m.AL[i] = S.rwy === "either" ? Math.abs(c.along) : c.along;
+    }
+  }
+  // hourly chance per constraint, and weighted percentiles of the components
+  const P = {}; for (const [k] of ACTIVE()) P[k] = new Array(T).fill(null);
+  const Q = { xw: [[], [], []], al: [[], [], []] };
+  for (let i = 0; i < T; i++) {
+    const acc = {}; for (const [k] of ACTIVE()) acc[k] = [0, 0];
+    const px = [], pa = [];
+    for (const s of srcs) {
+      let n = 0;
+      for (const m of s.members) if (m.F[i] >= 0) n++;
+      if (!n) continue;
+      for (const [k, bit] of ACTIVE()) { let h = 0; for (const m of s.members) if (m.F[i] >= 0 && (m.F[i] & bit)) h++; acc[k][0] += s.weight * h / n; acc[k][1] += s.weight; }
+      for (const m of s.members) if (m.F[i] >= 0) { px.push([m.XW[i], s.weight / n]); pa.push([m.AL[i], s.weight / n]); }
+    }
+    for (const [k] of ACTIVE()) P[k][i] = acc[k][1] ? acc[k][0] / acc[k][1] : null;
+    [0.1, 0.5, 0.9].forEach((q, j) => { Q.xw[j][i] = wq(px.slice(), q); Q.al[j][i] = wq(pa.slice(), q); });
+  }
+  S.calc = { srcs, P, Q, tindex: new Map(B.times.map((t, i) => [t, i])) };
+  renderAll();
+}
+// chance over a window [a, b) seconds; per source and blended
+function windowStats(a, b) {
+  const B = S.board, C = S.calc; if (!B || !C) return null;
+  const a0 = Math.floor(a / H) * H, hours = [];
+  for (let t = a0; t < b; t += H) if (C.tindex.has(t)) hours.push(C.tindex.get(t));
+  const nh = Math.max(1, (b - a0) / H), cov = B.min_window_coverage ?? 0.5;
+  const out = {}; for (const [k] of ACTIVE()) out[k] = [0, 0];
+  const per = [];
+  for (const s of C.srcs) {
+    let n = 0; const hit = {}; for (const [k] of ACTIVE()) hit[k] = 0;
+    for (const m of s.members) {
+      let got = 0, f = 0;
+      for (const i of hours) if (m.F[i] >= 0) { got++; f |= m.F[i]; }
+      if (got < Math.max(1, Math.floor(cov * nh / m.stepW))) continue;
+      n++; for (const [k, bit] of ACTIVE()) if (f & bit) hit[k]++;
+    }
+    if (!n) continue;
+    const row = { s, n };
+    for (const [k] of ACTIVE()) { row[k] = hit[k] / n; out[k][0] += s.weight * row[k]; out[k][1] += s.weight; }
+    per.push(row);
+  }
+  const res = { hours: hours.length, per };
+  for (const [k] of ACTIVE()) res[k] = out[k][1] ? out[k][0] / out[k][1] : null;
+  return res;
+}
+function blocks() {
+  const B = S.board; if (!B) return [];
+  const spans = S.layout === "3h" ? [0, 3, 6, 9, 12, 15, 18, 21].map(h => [h, h + 3]) : S.layout === "6h" ? [0, 6, 12, 18].map(h => [h, h + 6]) : (B.windows || [[0, 11], [11, 18], [18, 24]]);
+  const now = Date.now(), p = parts(now), base = Date.UTC(+p.year, +p.month - 1, +p.day), endData = B.times[B.times.length - 1] * 1000;
+  const out = [];
+  for (let k = 0; k < 8; k++) {
+    const day = new Date(base + k * 864e5), y = day.getUTCFullYear(), mo = day.getUTCMonth() + 1, dd = day.getUTCDate();
+    for (const [h0, h1] of spans) {
+      const a = zonedToUtc(y, mo, dd, h0), b = h1 === 24 ? zonedToUtc(y, mo, dd + 1, 0) : zonedToUtc(y, mo, dd, h1);
+      if (b <= now || a > endData || a > now + 7 * 864e5) continue;
+      out.push({ a: a / 1000, b: b / 1000, day: `${y}-${mo}-${dd}`, dayMs: zonedToUtc(y, mo, dd, 12), label: `${String(h0).padStart(2, "0")}–${String(h1).padStart(2, "0")}${zl()}` });
+    }
+  }
+  return out;
+}
 
+// ---------- render: forecast
+function renderGrid() {
+  const el = $("#grid"); if (!S.calc) { el.innerHTML = ""; return; }
+  const bl = blocks(); S.blocks = bl.map(w => ({ ...w, st: windowStats(w.a, w.b) }));
+  const days = []; for (const w of S.blocks) { const d = days[days.length - 1]; if (d && d.day === w.day) d.n++; else days.push({ day: w.day, n: 1, ms: w.dayMs }); }
+  let h = `<thead><tr><th></th>${days.map(d => `<th class="day" colspan="${d.n}">${esc(dayLabel(d.ms))}</th>`).join("")}</tr>`;
+  h += `<tr><th></th>${S.blocks.map(w => `<th><small class="hint">${w.label}</small></th>`).join("")}</tr></thead><tbody>`;
+  for (const [k] of ACTIVE()) {
+    h += `<tr class="${k}"><td class="rowh">${LABEL[k]}<small>${esc(SUB(k))}</small></td>`;
+    S.blocks.forEach((w, j) => {
+      const v = r5(w.st ? w.st[k] : null), sel = S.sel === j ? " sel" : "";
+      h += v == null ? `<td class="na">–</td>` : `<td class="p ${cat(v)}${sel}" data-j="${j}" tabindex="0" title="${esc(whenText(w.a * 1000))}–${esc(hm(w.b * 1000))}: ${v}%">${v}</td>`;
+    });
+    h += `</tr>`;
+  }
+  el.innerHTML = h + `</tbody>`;
+  el.querySelectorAll("td.p").forEach(td => {
+    const go = () => { const w = S.blocks[+td.dataset.j]; S.sel = +td.dataset.j; setWin(w.a * 1000, w.b * 1000); renderGrid(); $("#wcCard").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" }); };
+    td.addEventListener("click", go); td.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+}
+const COLORS = () => ({ any: css("--line"), xw: css("--xw"), hw: css("--hw"), tw: css("--tw") });
+function chartRange() {
+  const B = S.board, t0 = Math.floor(Date.now() / 1000 / H) * H, tEnd = Math.min(B.times[B.times.length - 1], t0 + 7 * 24 * H);
+  return [t0, tEnd];
+}
+function renderChart() {
+  const svg = $("#chart"); if (!S.calc) { svg.innerHTML = ""; return; }
+  const B = S.board, C = S.calc, col = COLORS(), [t0, t1] = chartRange();
+  const W = 1000, Hh = 280, L = 44, R = 14, T = 12, Bm = 40;
+  const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const idx = B.times.map((t, i) => [t, i]).filter(([t]) => t >= t0 && t <= t1);
+  let ymax = 100, unit = "%";
+  if (S.view === "comp") {
+    unit = " kt";
+    const vals = []; idx.forEach(([, i]) => { for (const a of [C.Q.xw[2][i], C.Q.al[2][i], C.Q.al[0][i]]) if (a != null) vals.push(Math.abs(a)); });
+    ymax = Math.max(10, S.lim.xw * 1.2, (S.lim.hw ?? 0) * 1.2, ...vals) ; ymax = Math.ceil(ymax / 5) * 5;
+  }
+  const ymin = S.view === "comp" && S.rwy !== "either" ? -Math.max(5, Math.ceil(Math.max(S.lim.tw ?? 0, ...idx.map(([, i]) => -(C.Q.al[0][i] ?? 0))) * 1.2 / 5) * 5) : 0;
+  const y = v => T + (1 - (v - ymin) / (ymax - ymin)) * (Hh - T - Bm);
+  let g = "";
+  // risk shading on the probability view
+  if (S.view === "prob") {
+    g += `<rect x="${L}" y="${y(100)}" width="${W - L - R}" height="${y(50) - y(100)}" fill="${css("--severe")}" opacity=".07"/>`;
+    g += `<rect x="${L}" y="${y(50)}" width="${W - L - R}" height="${y(20) - y(50)}" fill="${css("--marginal")}" opacity=".09"/>`;
+  }
+  const step = S.view === "prob" ? 20 : ymax - ymin > 40 ? 10 : 5;
+  for (let v = Math.ceil(ymin / step) * step; v <= ymax; v += step) g += `<line class="gr" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}${S.view === "prob" ? "%" : ""}</text>`;
+  if (ymin < 0) g += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="${css("--muted")}"/>`;
+  // day lines and labels in the display zone
+  const p0 = parts(t0 * 1000);
+  for (let k = 0; k < 9; k++) {
+    const dm = zonedToUtc(+p0.year, +p0.month, +p0.day + k, 0) / 1000, de = zonedToUtc(+p0.year, +p0.month, +p0.day + k + 1, 0) / 1000;
+    if (dm > t0 && dm < t1) g += `<line class="day" x1="${x(dm)}" x2="${x(dm)}" y1="${T}" y2="${Hh - Bm}"/>`;
+    const a = Math.max(t0, dm), b = Math.min(t1, de);
+    if (b - a > 5 * H) g += `<text class="axd" x="${x((a + b) / 2)}" y="${Hh - Bm + 18}" text-anchor="middle">${esc(dayLabel((dm + 12 * H) * 1000))}</text>`;
+    for (const hh of [6, 12, 18]) { const tt = zonedToUtc(+p0.year, +p0.month, +p0.day + k, hh) / 1000; if (tt > t0 && tt < t1) g += `<text class="ax" x="${x(tt)}" y="${Hh - Bm + 33}" text-anchor="middle">${String(hh).padStart(2, "0")}</text>`; }
+  }
+  const path = (arr, cls) => { let d = "", pen = false; for (const [t, i] of idx) { const v = arr[i]; if (v == null) { pen = false; continue; } d += `${pen ? "L" : "M"}${x(t).toFixed(1)},${y(v).toFixed(1)}`; pen = true; } return d; };
+  const band = (lo, hi) => { let segs = [], cur = []; for (const [t, i] of idx) { if (lo[i] == null || hi[i] == null) { if (cur.length) segs.push(cur); cur = []; continue; } cur.push([x(t), y(hi[i]), y(lo[i])]); } if (cur.length) segs.push(cur); return segs.map(s => `M${s.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L")}L${s.slice().reverse().map(p => `${p[0].toFixed(1)},${p[2].toFixed(1)}`).join("L")}Z`).join(""); };
+  let lg = "";
+  if (S.view === "prob") {
+    for (const [k] of ACTIVE().slice().reverse()) {
+      const arr = C.P[k].map(v => v == null ? null : 100 * v);
+      g += `<path d="${path(arr)}" fill="none" stroke="${col[k]}" stroke-width="${k === "any" ? 3 : 2}" ${k === "tw" ? 'stroke-dasharray="6 4"' : ""} stroke-linejoin="round"/>`;
+    }
+    lg = ACTIVE().map(([k]) => `<span><i style="background:${col[k]}"></i>${LABEL[k]} ${k === "any" ? "" : esc(SUB(k))}</span>`).join("");
+  } else {
+    const alName = S.rwy === "either" ? "Along runway (either end)" : `Headwind on ${S.rwy} (below zero: tailwind)`;
+    g += `<path d="${band(C.Q.al[0], C.Q.al[2])}" fill="${col.hw}" opacity=".18"/><path d="${band(C.Q.xw[0], C.Q.xw[2])}" fill="${col.xw}" opacity=".2"/>`;
+    g += `<path d="${path(C.Q.al[1])}" fill="none" stroke="${col.hw}" stroke-width="2.5"/><path d="${path(C.Q.xw[1])}" fill="none" stroke="${col.xw}" stroke-width="2.5"/>`;
+    const lim = (v, c) => v == null || v < ymin || v > ymax ? "" : `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${c}" stroke-width="1.5" stroke-dasharray="7 5"/>`;
+    g += lim(S.lim.xw, col.xw) + lim(S.lim.hw, col.hw) + (S.lim.tw != null ? lim(S.rwy === "either" ? S.lim.tw : -S.lim.tw, col.tw) : "");
+    lg = `<span><i style="background:${col.xw}"></i>Crosswind, median and 10–90% of members</span><span><i style="background:${col.hw}"></i>${alName}</span><span style="color:var(--muted)"><i class="dash" style="color:var(--muted)"></i>Your limits</span>`;
+  }
+  g += `<line class="now" x1="${x(Date.now() / 1000)}" x2="${x(Date.now() / 1000)}" y1="${T}" y2="${Hh - Bm}"/>`;
+  if (S.win.a && S.win.b) { const a = Math.max(t0, S.win.a / 1000), b = Math.min(t1, S.win.b / 1000); if (b > a) g += `<rect x="${x(a)}" y="${T}" width="${Math.max(2, x(b) - x(a))}" height="${Hh - T - Bm}" fill="none" stroke="${css("--ink")}" stroke-width="1.5"/>`; }
+  g += `<line class="cur" id="cur" x1="0" x2="0" y1="${T}" y2="${Hh - Bm}" visibility="hidden"/>`;
+  g += `<rect id="hit" x="${L}" y="0" width="${W - L - R}" height="${Hh}" fill="transparent"/>`;
+  svg.innerHTML = g; $("#chartLg").innerHTML = lg;
+  const pick = ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    const t = t0 + (px - L) / (W - L - R) * (t1 - t0); let best = null;
+    for (const [tt, i] of idx) if (!best || Math.abs(tt - t) < Math.abs(best[0] - t)) best = [tt, i];
+    if (!best) return; const cur = $("#cur"); cur.setAttribute("x1", x(best[0])); cur.setAttribute("x2", x(best[0])); cur.setAttribute("visibility", "visible");
+    readout(best[0], best[1]);
+  };
+  $("#hit").addEventListener("pointermove", pick); $("#hit").addEventListener("pointerdown", pick);
+  $("#hit").addEventListener("pointerleave", () => { $("#cur").setAttribute("visibility", "hidden"); readout(); });
+  readout();
+}
+function readout(t, i) {
+  const C = S.calc, el = $("#readout");
+  if (t == null) { el.innerHTML = `<span class="hint">Hover or tap the chart for hourly values.</span>`; return; }
+  const col = COLORS();
+  if (S.view === "prob") el.innerHTML = `<b>${esc(whenText(t * 1000))}</b> &nbsp; ` + ACTIVE().map(([k]) => `<span style="color:${col[k]}">${LABEL[k]} <b>${C.P[k][i] == null ? "–" : Math.round(100 * C.P[k][i]) + "%"}</b></span>`).join(" &nbsp; ");
+  else el.innerHTML = `<b>${esc(whenText(t * 1000))}</b> &nbsp; <span style="color:${col.xw}">Crosswind <b>${kt(C.Q.xw[1][i])}</b> kt (${kt(C.Q.xw[0][i])}–${kt(C.Q.xw[2][i])})</span> &nbsp; <span style="color:${col.hw}">${S.rwy === "either" ? "Along runway" : "Headwind on " + S.rwy} <b>${kt(C.Q.al[1][i])}</b> kt (${kt(C.Q.al[0][i])}–${kt(C.Q.al[2][i])})</span>`;
+}
+
+// ---------- render: window check
+function setWin(a, b, save = true) {
+  S.win = { a, b };
+  $("#wcStart").value = a ? toInput(a) : ""; $("#wcEnd").value = b ? toInput(b) : "";
+  if (save) store.set("winds.win", JSON.stringify(S.win));
+  renderWin(); renderChart();
+}
+function renderWin() {
+  const out = $("#wcOut"); $("#wcStartL").textContent = `Start (${S.zone === "z" ? "Zulu" : "local"})`; $("#wcEndL").textContent = `End (${S.zone === "z" ? "Zulu" : "local"})`;
+  if (!S.calc) { out.innerHTML = ""; return; }
+  const { a, b } = S.win;
+  if (!a || !b || b <= a) { out.innerHTML = `<p class="hint">Pick a start and an end, use a quick button, or click a value in the block table.</p>`; S.winRes = null; return; }
+  const st = windowStats(a / 1000, b / 1000); S.winRes = st;
+  if (!st || !st.hours || st.any == null) { out.innerHTML = `<p class="hint">No guidance covers ${esc(whenText(a))}–${esc(hm(b))}. The board reaches ${esc(whenText(S.board.times[S.board.times.length - 1] * 1000))}.</p>`; return; }
+  const p = r5(st.any), c = cat(p), col = COLORS();
+  let h = `<div class="pov"><div><div class="hint">${esc(whenText(a))} to ${esc(whenText(b))}, ${esc(rwyText())}</div><div class="big">${p}<small>%</small></div></div><span class="cat ${c}">${CATNAME[c]}</span>
+    <div class="parts">${ACTIVE().slice(1).map(([k]) => `<span class="${k}"><b>${r5(st[k])}%</b>${LABEL[k].toLowerCase()} ${esc(SUB(k))}</span>`).join("")}</div></div>`;
+  h += `<div class="brw"><table class="br"><thead><tr><th>Source</th><th>Members</th>${ACTIVE().map(([k]) => `<th>${LABEL[k]}</th>`).join("")}<th>Weight</th></tr></thead><tbody>`;
+  for (const r of st.per.sort((x, y) => FAMS.findIndex(f => f[0] === x.s.family) - FAMS.findIndex(f => f[0] === y.s.family))) {
+    h += `<tr><td><span class="dot" style="background:var(--${r.s.family})"></span>${esc(r.s.label)}</td><td>${r.n}</td>${ACTIVE().map(([k]) => `<td>${Math.round(100 * r[k])}%</td>`).join("")}<td>${r.s.weight}</td></tr>`;
+  }
+  h += `</tbody></table></div><div class="hint" style="margin-top:6px">${st.hours} hourly time${st.hours > 1 ? "s" : ""} with guidance. Source values are unrounded; the blend is weighted by source and rounded to the nearest 5%.</div>`;
+  out.innerHTML = h;
+}
+function summaryText() {
+  const st = S.winRes; if (!st || st.any == null) return "";
+  const { a, b } = S.win;
+  return `SLF winds, ${whenText(a)} to ${whenText(b)} (${rwyText()}, ${S.basis === "gust" ? "peak gusts" : "sustained wind"}): ` +
+    `${r5(st.any)}% chance of breaking a limit (${ACTIVE().slice(1).map(([k]) => `${LABEL[k].toLowerCase()} ${SUB(k)} ${r5(st[k])}%`).join(", ")}). ` +
+    `${st.per.length} guidance sources, board run ${S.board.generated}.`;
+}
+
+// ---------- sources
+function saveOff() { store.set("winds.off", JSON.stringify(S.board.sources.filter(s => usable(s) && !S.enabled[s.id]).map(s => s.id))); }
+function renderSources() {
+  const B = S.board; const list = B.sources.filter(s => usable(s));
+  $("#srclist").innerHTML = list.map(s => `<li><input type="checkbox" id="src-${esc(s.id)}" data-id="${esc(s.id)}" ${S.enabled[s.id] ? "checked" : ""}>
+    <label for="src-${esc(s.id)}"><span class="dot" style="background:var(--${s.family})"></span>${esc(s.label)}</label>
+    <span class="meta">${s.members.length} member${s.members.length > 1 ? "s" : ""}, weight ${s.weight}${s.cycle ? `, ${esc(s.cycle.replace("T", " "))}` : ""}${s.status !== "ok" ? `, ${esc(s.status)}` : ""}</span></li>`).join("");
+  $("#srclist").querySelectorAll("input").forEach(cb => cb.addEventListener("change", () => { S.enabled[cb.dataset.id] = cb.checked; saveOff(); renderSources(); recompute(); }));
+  $("#fams").innerHTML = FAMS.map(([f, n]) => `<label><input type="checkbox" data-fam="${f}"><span class="dot" style="background:var(--${f})"></span>${n}</label>`).join("");
+  $("#fams").querySelectorAll("input").forEach(cb => {
+    const ss = list.filter(s => s.family === cb.dataset.fam), on = ss.filter(s => S.enabled[s.id]).length;
+    cb.disabled = !ss.length; cb.checked = ss.length > 0 && on === ss.length; cb.indeterminate = on > 0 && on < ss.length;
+    cb.addEventListener("change", () => { for (const s of ss) S.enabled[s.id] = cb.checked; saveOff(); renderSources(); recompute(); });
+  });
+}
+
+// ---------- live observations
 async function getJSON(url, ms = 8000, opt = {}) {
   const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms);
   try { const r = await fetch(url, { cache: "no-store", signal: ctl.signal, ...opt }); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); }
@@ -390,7 +700,6 @@ function pickTowers(rows) {
     const id = siteOf(r.tower); if (!TOWERS.some(t => t.id === id)) continue;
     if (clean(r.avg_spd_1min) == null && clean(r.peak_spd_1min) == null) continue;
     const t = Date.parse(asUTC(r.reading_datetime)); if (!Number.isFinite(t)) continue;
-    if (r.hgt !== 30) continue;
     const rec = { id, hgt: r.hgt, t, dir: clean(r.avg_dir_1min), spd: clean(r.avg_spd_1min), pk: clean(r.peak_spd_1min), pkdir: clean(r.peak_dir_1min), side: r.prevailing };
     const o = out[id], dz = r => Math.abs((r.hgt ?? 99) - 30);
     // newest reading wins; at the same time, the height nearest 30 ft, then the prevailing side
@@ -398,29 +707,35 @@ function pickTowers(rows) {
   }
   return out;
 }
-async function fetchTowers() {
-  const errors=[]; let retained=null;
-  for(const url of [...HISTORY_URLS,...SNAPSHOT_URLS]){
-    try {
-      const j=await getJSON(url+"?t="+Math.floor(Date.now()/60000),10000);
-      let r;
-      if(url.includes("slf-winds"))r=compactSeries(j);
-      else {
-        const feed=j.feeds?.winds;
-        const towers=pickTowers(feed?.rows||[]);
-        if(!Object.keys(towers).length)throw Error("No 30 ft SLF observations");
-        r={towers,series:null,sourceStatus:feed.status,generatedAt:j.generated_at};
-      }
-      r.via=url.includes('slf-winds')?'Weather COP tower history':'Weather COP snapshot';
-      const h=dataHealth(r.towers,'worst',r.sourceStatus,r.generatedAt);
-      if(h.ok)return r;
-      const score=x=>Object.values(x.towers).filter(o=>observationFresh(o)).length*1e15+Math.max(...Object.values(x.towers).map(o=>o.t));
-      if(!retained||score(r)>score(retained))retained=r;
-      errors.push('Published observations incomplete or stale');
-    }catch(e){errors.push(e.message);}
+function svcBase(v) { try { const u = new URL(v); if (u.protocol !== "https:") return null; u.pathname = u.pathname.replace(/\/(api\/towers|health)?\/?$/, ""); u.search = ""; u.hash = ""; return u.toString().replace(/\/$/, ""); } catch { return null; } }
+async function fetchService() {
+  const j = await getJSON(`${S.svc}/api/towers?hours=${SVC_HOURS}&t=${Math.floor(Date.now() / 60e3)}`, 12000);
+  if (!j || !j.towers) throw new Error("unexpected response");
+  const series = {}, latest = {};
+  for (const T of TOWERS) {
+    series[T.id] = (j.towers[T.id] || []).map(([t, dir, spd, pk, pkdir, hgt]) => ({ id: T.id, t, dir, spd, pk, pkdir, hgt }));
+    const last = series[T.id][series[T.id].length - 1]; if (last) latest[T.id] = last;
   }
-  if(retained)return retained;
-  throw Error(errors.join('; '));
+  if (!Object.keys(latest).length) throw new Error(j.poll_ok === false ? "service can’t reach the RAD" : "no readings stored yet");
+  return { towers: latest, series };
+}
+async function fetchTowers() {
+  const tries = [], tried = [];
+  if (S.svc) {
+    try { const r = await fetchService(); return { towers: r.towers, series: r.series, via: "runway winds service", tried }; }
+    catch (e) { tried.push(`runway winds service: ${e.name === "AbortError" ? "timed out" : e.message}`); }
+  }
+  if (S.endpoint) tries.push(["minute data service", S.endpoint + (S.endpoint.includes("?") ? "&" : "?") + "t=" + Date.now(), j => j && j.feeds && j.feeds.winds && j.feeds.winds.rows]);
+  if (Date.now() - S.directFailAt > 15 * 60e3) tries.push(["RAD API", RAD_LATEST, j => Array.isArray(j) ? j : null, true]);
+  tries.push(["COP snapshot", COP_SNAPSHOT + "?t=" + Math.floor(Date.now() / 60e3), j => j && j.feeds && j.feeds.winds && j.feeds.winds.rows]);
+  for (const [name, url, rowsOf, direct] of tries) {
+    try {
+      const j = await getJSON(url, direct ? 6000 : 10000), tw = pickTowers(rowsOf(j));
+      if (!Object.keys(tw).length) throw new Error("no 0511–0513 readings");
+      return { towers: tw, via: name, tried };
+    } catch (e) { tried.push(`${name}: ${e.name === "AbortError" ? "timed out" : e.message}`); if (direct) S.directFailAt = Date.now(); }
+  }
+  throw Object.assign(new Error("No tower data"), { tried });
 }
 async function fetchKTTS() {
   try {
@@ -443,41 +758,38 @@ async function fetchKTTSHist() {
     .filter(o => Number.isFinite(o.t) && o.spd != null).sort((a, b) => a.t - b.t);
 }
 async function refreshLive() {
-  if(S.busy)return; S.busy=true;
   $("#liveRefresh").disabled = true;
   const [tw, k] = await Promise.allSettled([fetchTowers(), fetchKTTS()]);
-  if (tw.status === "fulfilled") { S.live.towers = tw.value.towers; S.live.via = tw.value.via; S.live.err = null; S.live.sourceStatus=tw.value.sourceStatus; S.live.generatedAt=tw.value.generatedAt; if(tw.value.series)S.series=tw.value.series; }
-  else { S.live.err = [tw.reason.message]; }
+  if (tw.status === "fulfilled") { S.live.towers = tw.value.towers; S.live.via = tw.value.via; S.live.err = null; S.live.tried = tw.value.tried; S.series = tw.value.series || null; }
+  else { S.live.err = tw.reason.tried || [tw.reason.message]; }
   if (k.status === "fulfilled") { S.live.ktts = k.value; S.live.kErr = null; } else S.live.kErr = k.reason.message;
   S.live.at = Date.now();
   // session history, one point per reading
   const entries = [...TOWERS.map(T => [T.id, S.live.towers[T.id]]), ["ktts", S.live.ktts]];
-  for (const [key, o] of entries) { if (!o) continue; const h = S.hist[key] = S.hist[key] || []; if (!h.length || h[h.length - 1].t !== o.t) { h.push(o); while(h.length && h[0].t < Date.now()-24*3600e3)h.shift(); } }
-  S.busy=false; $("#liveRefresh").disabled = false;
+  for (const [key, o] of entries) { if (!o) continue; const h = S.hist[key] = S.hist[key] || []; if (!h.length || h[h.length - 1].t !== o.t) { h.push(o); if (h.length > 240) h.shift(); } }
+  $("#liveRefresh").disabled = false;
   if (Date.now() - S.kttsHistAt > 10 * 60e3) { S.kttsHistAt = Date.now(); fetchKTTSHist().then(h => { S.kttsHist = h; renderHist(); }).catch(() => { S.kttsHistAt = Date.now() - 8 * 60e3; }); }
-  renderAll();
+  renderLive(); renderHist();
 }
 // wind used for an observation under the current basis
 function obsWind(o, kind) {
   if (!o) return null;
   if (kind === "ktts") { const w = S.basis === "gust" && o.gst != null ? o.gst : o.spd; return { w, d: o.vrb ? null : o.dir, gustUsed: S.basis === "gust" && o.gst != null }; }
-  if (S.basis === "gust") return { w: o.pk ?? o.spd, d: o.pk != null ? o.pkdir ?? o.dir : o.dir, approximate:o.pk != null && o.pkdir == null && o.dir != null, peakUsed:o.pk != null };
+  if (S.basis === "gust") return { w: o.pk ?? o.spd, d: o.pkdir ?? o.dir };
   return { w: o.spd, d: o.dir };
 }
 function evalObs(o, kind) {
   const ww = obsWind(o, kind); if (!ww || ww.w == null) return null;
   if (ww.w < 0.5) return { ww, c: { xw: 0, along: 0, rel: null, vrb: false, calm: true }, j: { xw: 0, hw: 0, tw: 0 }, f: 0, ratio: 0 };
   const c = comps(ww.w, ww.d), j = judgeVals(c), f = flags(c), L = S.lim;
-  const ratioOf=(v,l)=>l==null?0:l===0?(v>0?9:0):v/l;
-  const ratio = Math.max(ratioOf(j.xw,L.xw),ratioOf(j.hw,L.hw),ratioOf(j.tw,L.tw));
+  const ratio = Math.max(j.xw / L.xw, L.hw != null ? j.hw / L.hw : 0, L.tw != null && L.tw > 0 ? j.tw / L.tw : (L.tw === 0 && j.tw > 0 ? 9 : 0));
   return { ww, c, j, f, ratio };
 }
 function currentObs() {
   if (S.obsSrc === "ktts") return S.live.ktts ? { key: "ktts", o: S.live.ktts, e: evalObs(S.live.ktts, "ktts"), name: "KTTS" } : null;
   if (S.obsSrc !== "worst") { const o = S.live.towers[S.obsSrc]; return o ? { key: S.obsSrc, o, e: evalObs(o, "tower"), name: `Tower ${S.obsSrc}` } : null; }
   let best = null;
-  const hasFresh=TOWERS.some(T=>observationFresh(S.live.towers[T.id]));
-  for (const T of TOWERS) { const o = S.live.towers[T.id]; if (!o || (hasFresh&&!observationFresh(o))) continue; const e = evalObs(o, "tower"); if (!e) continue; if (!best || e.ratio > best.e.ratio) best = { key: T.id, o, e, name: `Tower ${T.id}` }; }
+  for (const T of TOWERS) { const o = S.live.towers[T.id]; if (!o) continue; const e = evalObs(o, "tower"); if (!e) continue; if (!best || e.ratio > best.e.ratio) best = { key: T.id, o, e, name: `Tower ${T.id}` }; }
   return best;
 }
 function dirTxt(d) { return d == null ? "VRB" : String(Math.round(d / 10) * 10 || 360).padStart(3, "0"); }
@@ -496,15 +808,13 @@ function renderLive() {
   const cur = currentObs(), comp = $("#comps"), st = $("#status");
   const L = S.lim, col = COLORS();
   if (!cur || !cur.e) {
-    const msg = S.obsSrc === "ktts" ? `KTTS observation unavailable${S.live.kErr ? ` (${esc(S.live.kErr)})` : ""}.` : S.live.err ? `Tower data unavailable. Tried ${esc(S.live.err.join("; "))}. The Weather COP collector may be delayed; KTTS is available separately.` : S.live.at ? "No reading from that tower in the latest data. Pick another tower or KTTS." : "Loading observations";
+    const msg = S.obsSrc === "ktts" ? `KTTS observation unavailable${S.live.kErr ? ` (${esc(S.live.kErr)})` : ""}.` : S.live.err ? `Tower data unavailable. Tried ${esc(S.live.err.join("; "))}. Add the minute data service under Live data settings, or switch to KTTS.` : S.live.at ? "No reading from that tower in the latest data. Pick another tower or KTTS." : "Loading observations";
     st.className = "status none"; st.innerHTML = `<i aria-hidden="true"></i><span>${S.live.at ? "No observation" : "Loading observations"}</span>`;
-    comp.innerHTML = `<div class="hint">${msg}</div>`; $("#wline").innerHTML = ""; drawRose(null); renderObsTable(); return;
+    comp.innerHTML = `<div class="hint">${msg}</div>`; $("#wline").innerHTML = ""; drawRose(null); renderObsTable(); renderModelsNow(); return;
   }
-  const { e, o } = cur, stale = !observationFresh(o, cur.key==='ktts'?'ktts':'tower');
-  const health=cur.key==='ktts'?{ok:!stale&&!S.live.kErr,missing:[],sourceBad:!!S.live.kErr}:dataHealth(S.live.towers,S.obsSrc,S.live.sourceStatus,S.live.generatedAt);
-  if(S.live.err&&cur.key!=='ktts')health.ok=false;
+  const { e, o } = cur, age = (Date.now() - o.t) / 60000, stale = age > OBS_STALE_MIN;
   // in "worst of" mode every tower counts toward the status; the readouts show the tower closest to (or furthest over) a limit
-  const group = S.obsSrc === "worst" ? TOWERS.map(T => [T.id, S.live.towers[T.id]]).filter(([, x]) => x).map(([id, x]) => [id, evalObs(x, "tower")]).filter(([id, x]) => x && observationFresh(S.live.towers[id])) : (stale?[]:[[cur.key, e]]);
+  const group = S.obsSrc === "worst" ? TOWERS.map(T => [T.id, S.live.towers[T.id]]).filter(([, x]) => x).map(([id, x]) => [id, evalObs(x, "tower")]).filter(([, x]) => x) : [[cur.key, e]];
   const over = {}, near = {};
   const mark = (bag, k, id) => { (bag[k] = bag[k] || []).push(id); };
   for (const [id, ee] of group) {
@@ -513,8 +823,8 @@ function renderLive() {
     if (L.tw != null) { if (ee.j.tw > L.tw) mark(over, "tailwind", id); else if (L.tw > 0 && ee.j.tw > 0.8 * L.tw) mark(near, "tailwind", id); }
   }
   const say = bag => Object.entries(bag).map(([k, ids]) => S.obsSrc === "worst" ? `${k} at ${ids.join(", ")}` : k).join("; ");
-  st.className = "status " + (Object.keys(over).length ? "bad" : Object.keys(near).length ? "near" : health.ok?"ok":"none");
-  st.innerHTML = `<i aria-hidden="true"></i><span>${Object.keys(over).length ? `Over the limit: ${esc(say(over))}` : Object.keys(near).length ? `${health.ok?"Within limits; within 20%":"Data incomplete; near limit"}: ${esc(say(near))}` : health.ok?"Within limits":"Data incomplete or stale"}${!health.ok&&Object.keys(over).length?" · data incomplete":""}</span>`;
+  st.className = "status " + (Object.keys(over).length ? "bad" : Object.keys(near).length ? "near" : "ok");
+  st.innerHTML = `<i aria-hidden="true"></i><span>${Object.keys(over).length ? `Over the limit: ${esc(say(over))}` : Object.keys(near).length ? `Within limits; within 20%: ${esc(say(near))}` : "Within limits"}</span>`;
   const sideTxt = e.c.calm ? "calm" : e.c.vrb ? "variable wind, counted as fully across" : e.c.rel == null || Math.abs(e.c.rel) < 1 || Math.abs(e.c.rel) > 179 ? "straight along the runway" : `from the ${e.c.rel > 0 ? "right" : "left"}${S.rwy === "either" ? " on 33" : ` on ${S.rwy}`}`;
   const al = alongTxt(e.c), alv = Math.abs(e.c.along);
   const alOver = S.rwy === "either" || e.c.vrb ? (L.hw != null && e.j.hw > L.hw) || (L.tw != null && e.j.tw > L.tw) : e.c.along >= 0 ? L.hw != null && e.j.hw > L.hw : L.tw != null && e.j.tw > L.tw;
@@ -522,9 +832,9 @@ function renderLive() {
   comp.innerHTML = `<div class="comp xw${e.j.xw > L.xw ? " over" : ""}"><div class="k">Crosswind</div><div class="v">${kt(e.j.xw)}<small>kt</small></div><div class="s">${esc(sideTxt)}. Limit ${fmtN(L.xw)} kt</div></div>
     <div class="comp hw${alOver ? " over" : ""}"><div class="k">${esc(al.k)}</div><div class="v">${kt(alv)}<small>kt</small></div><div class="s">${esc(al.s)}${alLim ? `. Limit ${esc(alLim)} kt` : ". No limit set"}</div></div>`;
   const kind = cur.key === "ktts" ? "ktts" : "tower";
-  const used = kind === "ktts" ? (e.ww.gustUsed ? "gust" : "sustained wind") : S.basis === "gust" && e.ww.peakUsed ? "one-minute peak" : "one-minute mean";
-  $("#wline").innerHTML = `<b>${esc(cur.name)}</b>${kind === "tower" ? ` (${esc(TOWERS.find(t => t.id === cur.key).name.toLowerCase())}, ${o.hgt ?? 30} ft)` : ""}: <b>${esc(windTxt(o, kind))}</b>, using the ${used}${e.ww.approximate?" (component approximate; mean direction used)":""}. <span class="${stale ? "" : "hint"}" style="${stale ? "color:var(--severe);font-weight:600" : ""}">${esc(hm(o.t))}, ${esc(ago(o.t))}${stale ? ", stale" : ""}</span>`;
-  drawRose(e); renderObsTable();
+  const used = kind === "ktts" ? (e.ww.gustUsed ? "gust" : "sustained wind") : S.basis === "gust" ? "one-minute peak" : "one-minute mean";
+  $("#wline").innerHTML = `<b>${esc(cur.name)}</b>${kind === "tower" ? ` (${esc(TOWERS.find(t => t.id === cur.key).name.toLowerCase())}, ${o.hgt ?? 30} ft)` : ""}: <b>${esc(windTxt(o, kind))}</b>, using the ${used}. <span class="${stale ? "" : "hint"}" style="${stale ? "color:var(--severe);font-weight:600" : ""}">${esc(hm(o.t))}, ${esc(ago(o.t))}${stale ? ", stale" : ""}</span>`;
+  drawRose(e); renderObsTable(); renderModelsNow();
 }
 function renderObsTable() {
   const L = S.lim, rows = [];
@@ -536,7 +846,7 @@ function renderObsTable() {
     const alOver = e && ((L.hw != null && e.j.hw > L.hw) || (L.tw != null && e.j.tw > L.tw));
     return `<tr class="pick" data-key="${key}" aria-selected="${sel}" tabindex="0"><td><b>${esc(name)}</b></td><td>${esc(windTxt(o, kind))}</td>
       <td class="${e && e.j.xw > L.xw ? "over" : ""}">${e ? kt(e.j.xw) + " kt" : "–"}</td><td class="${alOver ? "over" : ""}">${alv == null ? "–" : (alv > 0 && S.rwy !== "either" ? "+" : "") + Math.round(alv) + " kt"}</td>
-      <td>${esc(hm(o.t))} <span class="hint">${esc(ago(o.t))}${!observationFresh(o,kind)?" · stale":""}</span></td><td class="raw">${kind === "ktts" ? esc(o.raw) : ""}</td></tr>`;
+      <td>${esc(hm(o.t))} <span class="hint">${esc(ago(o.t))}</span></td><td class="raw">${kind === "ktts" ? esc(o.raw) : ""}</td></tr>`;
   };
   for (const T of TOWERS) rows.push(line(T.id, `${T.id} ${T.name.toLowerCase()}`, S.live.towers[T.id], "tower"));
   rows.push(line("ktts", "KTTS", S.live.ktts, "ktts"));
@@ -545,9 +855,15 @@ function renderObsTable() {
     const go = () => { S.obsSrc = tr.dataset.key; $("#obsSrc").value = S.obsSrc; store.set("winds.obs", S.obsSrc); renderLive(); };
     tr.addEventListener("click", go); tr.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } });
   });
-  const via = S.live.via ? `Towers via ${S.live.via}.` : "";
+  const via = S.live.via ? `Towers via the ${S.live.via}${S.live.via === "COP snapshot" ? " (about every 5 minutes)" : ""}.` : "";
   $("#endpointNote").textContent = `${via}${S.live.ktts ? ` KTTS via ${S.live.ktts.via}.` : ""}${S.live.at ? ` Checked ${hm(S.live.at)}.` : ""}`;
 }
+function renderModelsNow() {
+  const el = $("#modelsNow"), C = S.calc; if (!C) { el.innerHTML = ""; return; }
+  const i = C.tindex.get(Math.floor(Date.now() / 1000 / H) * H); if (i == null || C.Q.xw[1][i] == null) { el.innerHTML = ""; return; }
+  el.innerHTML = `Guidance for this hour: crosswind <b>${kt(C.Q.xw[1][i])} kt</b> (members ${kt(C.Q.xw[0][i])}–${kt(C.Q.xw[2][i])}), ${S.rwy === "either" ? "along runway" : "headwind on " + S.rwy} <b>${kt(C.Q.al[1][i])} kt</b>, chance of breaking a limit <b>${C.P.any[i] == null ? "–" : r5(C.P.any[i]) + "%"}</b>.`;
+}
+// ---------- last hours: tower components (minute data) with KTTS reports
 const TCOL = ["--t1", "--t2", "--t3"], TDASH = ["", "8 5", "2 4"], TLG = ["", "dash", "dot2"];
 function compOf(o, kind) {
   const ww = obsWind(o, kind); if (!ww || ww.w == null) return null;
@@ -558,12 +874,11 @@ function compOf(o, kind) {
 function histData() {
   const now = Date.now(), since = now - S.hHours * 3600e3, out = [];
   TOWERS.forEach((T, k) => {
-    const by=new Map([...(S.series?.[T.id]||[]),...(S.hist[T.id]||[])].map(o=>[o.t,o]));
-    const src = [...by.values()].sort((a,b)=>a.t-b.t);
-    let pts = src.filter(o => o.t >= since - S.hSm * 60e3).map(o => ({ t: o.t, v: compOf(o, "tower"), approximate:!!obsWind(o,"tower")?.approximate })).filter(p => p.v != null);
+    const src = S.series ? S.series[T.id] || [] : S.hist[T.id] || [];
+    let pts = src.filter(o => o.t >= since - S.hSm * 60e3).map(o => ({ t: o.t, v: compOf(o, "tower") })).filter(p => p.v != null);
     if (S.hSm > 1) {   // highest value (largest size, sign kept) in the trailing window, minute data only
       const win = S.hSm * 60e3, q = [];
-      pts = pts.map(p => { q.push(p); while (q[0].t <= p.t - win) q.shift(); const m = q.reduce((a, b) => Math.abs(b.v) > Math.abs(a.v) ? b : a); return { t: p.t, v: m.v, at: m.t, approximate:m.approximate }; });
+      pts = pts.map(p => { q.push(p); while (q[0].t <= p.t - win) q.shift(); const m = q.reduce((a, b) => Math.abs(b.v) > Math.abs(a.v) ? b : a); return { t: p.t, v: m.v, at: m.t }; });
     }
     out.push({ key: T.id, name: `${T.id} ${T.name.toLowerCase()}`, k, pts: pts.filter(p => p.t >= since) });
   });
@@ -605,21 +920,20 @@ function renderHist() {
   $("#histLg").innerHTML = lines.map(l => l.key === "ktts" ? `<span style="color:var(--line)"><i class="sq" style="background:var(--line)"></i>KTTS reports</span>` : `<span style="color:var(${TCOL[l.k]})"><i class="${TLG[l.k]}" style="background:var(${TCOL[l.k]})"></i>${esc(l.name)}</span>`).join("") + `<span style="color:var(--severe)"><i class="dash"></i>Your limit</span><span>${esc(compName)}, ${S.basis === "gust" ? "one-minute peaks" : "one-minute means"}${S.hSm > 1 ? `, highest in the previous ${S.hSm} minutes` : ""}${S.basis === "gust" ? "; KTTS gust when reported" : ""}, kt</span>`;
   $("#histMax").innerHTML = lines.filter(l => l.pts.length).map(l => { const m = l.pts.reduce((a, p) => Math.abs(p.v) > Math.abs(a.v) ? p : a); return `<span>${esc(l.key === "ktts" ? "KTTS" : l.key)} highest <b>${Math.round(Math.abs(m.v))} kt</b> at ${esc(hm(m.at ?? m.t))}</span>`; }).join("");
   const n = lines.slice(0, 3).reduce((a, l) => a + l.pts.length, 0);
-  const approximated=lines.some(l=>l.pts.some(p=>p.approximate));
-  const first=lines.slice(0,3).flatMap(l=>l.pts).reduce((a,p)=>Math.min(a,p.t),Infinity);
-  $("#histNote").textContent=n?`Available tower history begins ${whenText(first)}. Empty periods have no published observations. History builds toward 12 hours through the existing Weather COP job.${approximated?" Some historical peak components are approximate because only mean direction was available.":""}`:"No tower observations available in this period yet.";
+  $("#histNote").textContent = S.series ? (n ? "" : "The runway winds service has no readings for this period yet.") :
+    `Showing tower readings collected since this page opened${S.live.via === "COP snapshot" ? " (about one every 5 minutes)" : ""}. Add the runway winds service under Live data settings for the last ${SVC_HOURS} hours of one-minute data.`;
   const pick = ev => {
     const r = svg.getBoundingClientRect(), t = since + ((ev.clientX - r.left) / r.width * W - L) / (W - L - Rr) * (now - since);
     const vals = lines.map(l => { let b = null; for (const p of l.pts) if (!b || Math.abs(p.t - t) < Math.abs(b.t - t)) b = p; return b && Math.abs(b.t - t) <= (l.key === "ktts" ? 40 : 3) * 60e3 ? [l, b] : null; }).filter(Boolean);
     const cur = $("#hcur"); cur.setAttribute("x1", x(t)); cur.setAttribute("x2", x(t)); cur.setAttribute("visibility", "visible");
-    $("#histRd").innerHTML = `<b>${esc(hm(t))}</b> &nbsp; ` + (vals.length ? vals.map(([l, p]) => `<span style="color:${l.key === "ktts" ? "var(--line)" : `var(${TCOL[l.k]})`}">${esc(l.key === "ktts" ? "KTTS" : l.key)} <b>${p.approximate?"≈":""}${Math.round(p.v)}</b> kt</span>`).join(" &nbsp; ") : `<span class="hint">no readings</span>`);
+    $("#histRd").innerHTML = `<b>${esc(hm(t))}</b> &nbsp; ` + (vals.length ? vals.map(([l, p]) => `<span style="color:${l.key === "ktts" ? "var(--line)" : `var(${TCOL[l.k]})`}">${esc(l.key === "ktts" ? "KTTS" : l.key)} <b>${Math.round(p.v)}</b> kt</span>`).join(" &nbsp; ") : `<span class="hint">no readings</span>`);
   };
   $("#hhit").addEventListener("pointermove", pick); $("#hhit").addEventListener("pointerdown", pick);
   $("#hhit").addEventListener("pointerleave", () => { $("#hcur").setAttribute("visibility", "hidden"); $("#histRd").innerHTML = `<span class="hint">Hover or tap the chart for readings.</span>`; });
   if (!$("#histRd").innerHTML) $("#histRd").innerHTML = `<span class="hint">Hover or tap the chart for readings.</span>`;
 }
 function drawRose(e) {
-  const svg = $("#rose"), col = COLORS(), cx = 150, cy = 150, R = 118, hdg = 330;
+  const svg = $("#rose"), col = COLORS(), cx = 150, cy = 150, R = 118, hdg = S.board ? S.board.runway_heading_true : 330;
   const pt = (b, r) => [cx + r * Math.sin(b * Math.PI / 180), cy - r * Math.cos(b * Math.PI / 180)];
   let g = `<circle class="ring" cx="${cx}" cy="${cy}" r="${R}" stroke-width="1.5"/>`;
   for (let b = 0; b < 360; b += 10) { const [x1, y1] = pt(b, R), [x2, y2] = pt(b, R - (b % 30 ? 5 : 10)); g += `<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${b % 90 ? 1 : 2}"/>`; }
@@ -650,15 +964,19 @@ function drawRose(e) {
   svg.innerHTML = g;
 }
 
-function header(){
-  const t=Date.parse(S.live.generatedAt),age=Date.now()-t;
-  $("#fresh").className="fresh"+(age>TOWER_MAX_AGE?" stale":"");
-  $("#fresh").textContent=Number.isFinite(t)?`COP published ${hm(t)} · ${ago(t)}`:"Waiting for observations";
-  const health=dataHealth(S.live.towers,'worst',S.live.sourceStatus,S.live.generatedAt);
-  const msg=S.live.err?'Tower update failed. Showing the last available observations.':!health.ok?`Tower coverage incomplete${health.missing.length?": "+health.missing.join(", ")+" missing or older than 15 minutes":"; the source is delayed or reporting an error"}.`:'';
-  $("#banners").innerHTML=msg?`<div class="banner bad">${esc(msg)}</div>`:'';
+// ---------- header
+function header() {
+  const B = S.board;
+  const age = Math.max(0, Math.round((Date.now() / 1000 - B.generated_unix) / 60)), stale = age > STALE_MIN;
+  $("#fresh").className = "fresh" + (stale ? " stale" : "");
+  $("#fresh").innerHTML = `Guidance <b>${esc(B.generated.slice(11, 16))}Z ${esc(B.generated.slice(0, 10))}</b><br><span class="where">${age < 90 ? age + " min ago" : (age / 60).toFixed(1) + " h ago"}</span>`;
+  let b = "";
+  if (stale) b += `<div class="banner bad">Guidance is ${(age / 60).toFixed(1)} h old. The 7-Day board’s hourly update may have failed; check the Actions tab in the SLFWeather repository.</div>`;
+  $("#banners").innerHTML = b;
+  $("#where").innerHTML = `Runway 15/33 at ${String(B.runway_heading_true).padStart(3, "0")}° true. Live towers 0511–0513 and KTTS, plus a 7-day chance of breaking your crosswind and headwind limits. <a href="https://cyclonecizek.github.io/SLFWeather/">7-Day Constraint Probabilities</a>`;
 }
-function renderAll(){header();renderLive();renderHist();}
+function renderAll() { renderGrid(); renderChart(); renderWin(); renderLive(); renderHist(); }
+
 // ---------- settings
 function readLim() {
   const num = (id, allowBlank) => { const v = $(id).value.trim(); if (v === "" && allowBlank) return null; const n = parseFloat(v); return Number.isFinite(n) ? Math.min(60, Math.max(0, n)) : undefined; };
@@ -669,39 +987,93 @@ function readLim() {
   store.set("winds.lim", JSON.stringify(S.lim)); limHint();
 }
 function limUI() { $("#limXw").value = S.lim.xw; $("#limHw").value = S.lim.hw ?? ""; $("#limTw").value = S.lim.tw ?? ""; limHint(); }
-function limHint(){ $("#limHint").textContent="Limits saved in this browser."; }
-function segUI(){document.querySelectorAll("#zoneSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.z===S.zone));}
-function bind(){
-  for(const id of ["#limXw","#limHw","#limTw"])$(id).addEventListener("change",()=>{readLim();limUI();renderAll();});
-  $("#limReset").onclick=()=>{S.lim={...S.std};store.set("winds.lim",null);limUI();renderAll();};
-  for(const [id,key,storage] of [["#rwy","rwy","winds.rwy"],["#basis","basis","winds.basis"],["#obsSrc","obsSrc","winds.obs"]]){
-    $(id).onchange=e=>{S[key]=e.target.value;store.set(storage,S[key]);renderAll();};
-  }
-  $("#zoneSeg").onclick=e=>{const b=e.target.closest('[data-z]');if(!b)return;S.zone=b.dataset.z;store.set('winds.zone',S.zone);segUI();renderAll();};
-  $("#liveRefresh").onclick=refreshLive;
-  for(const [id,data,key,storage] of [['#hhrsSeg','h','hHours','winds.hhrs'],['#hsmSeg','s','hSm','winds.hsm'],['#hcompSeg','c','hComp','winds.hcomp']]){
-    $(id).onclick=e=>{const b=e.target.closest(`[data-${data}]`);if(!b)return;S[key]=data==='c'?b.dataset[data]:+b.dataset[data];store.set(storage,String(S[key]));renderHist();};
-  }
+function limHint() {
+  const custom = S.lim.xw !== S.std.xw || S.lim.hw !== S.std.hw || S.lim.tw !== S.std.tw;
+  $("#limHint").textContent = custom ? `Your limits, kept in this browser. The 7-Day board uses crosswind ${fmtN(S.std.xw)} kt and head/tailwind ${fmtN(S.std.hw)} kt.` : `Same limits as the 7-Day board.`;
+}
+function segUI() {
+  document.querySelectorAll("#zoneSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.z === S.zone));
+  document.querySelectorAll("#viewSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === S.view));
+}
+function bind() {
+  let t; const onLim = () => { clearTimeout(t); t = setTimeout(() => { readLim(); recompute(); }, 250); };
+  for (const id of ["#limXw", "#limHw", "#limTw"]) { $(id).addEventListener("input", onLim); $(id).addEventListener("change", () => { readLim(); limUI(); recompute(); }); }
+  $("#limReset").addEventListener("click", () => { S.lim = { ...S.std }; store.set("winds.lim", null); limUI(); recompute(); renderLive(); });
+  $("#rwy").addEventListener("change", e => { S.rwy = e.target.value; store.set("winds.rwy", S.rwy); if (S.board) recompute(); else { renderLive(); renderHist(); } });
+  $("#basis").addEventListener("change", e => { S.basis = e.target.value; store.set("winds.basis", S.basis); if (S.board) { renderSources(); recompute(); } else { renderLive(); renderHist(); } });
+  $("#obsSrc").addEventListener("change", e => { S.obsSrc = e.target.value; store.set("winds.obs", S.obsSrc); renderLive(); });
+  $("#layout").addEventListener("change", e => { S.layout = e.target.value; S.sel = null; store.set("winds.layout", S.layout); renderGrid(); });
+  $("#zoneSeg").addEventListener("click", e => { const b = e.target.closest("[data-z]"); if (!b) return; S.zone = b.dataset.z; store.set("winds.zone", S.zone); S.sel = null; segUI(); setWin(S.win.a, S.win.b, false); renderAll(); });
+  $("#viewSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b) return; S.view = b.dataset.v; segUI(); renderChart(); });
+  $("#liveRefresh").addEventListener("click", refreshLive);
+  $("#hhrsSeg").addEventListener("click", e => { const b = e.target.closest("[data-h]"); if (!b) return; S.hHours = +b.dataset.h; store.set("winds.hhrs", String(S.hHours)); renderHist(); });
+  $("#hsmSeg").addEventListener("click", e => { const b = e.target.closest("[data-s]"); if (!b) return; S.hSm = +b.dataset.s; store.set("winds.hsm", String(S.hSm)); renderHist(); });
+  $("#hcompSeg").addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; S.hComp = b.dataset.c; store.set("winds.hcomp", S.hComp); renderHist(); });
+  $("#svcSave").addEventListener("click", () => {
+    const raw = $("#svc").value.trim(), v = raw ? svcBase(raw) : "";
+    if (v === null) { $("#endpointNote").textContent = "Enter the service’s full https:// address."; return; }
+    S.svc = v; $("#svc").value = v; store.set("winds.svc", v || null); S.series = null; refreshLive();
+  });
+  const onWin = () => { S.sel = null; setWin(fromInput($("#wcStart").value), fromInput($("#wcEnd").value)); renderGrid(); };
+  $("#wcStart").addEventListener("change", onWin); $("#wcEnd").addEventListener("change", onWin);
+  $("#quick").addEventListener("click", e => { const b = e.target.closest("[data-q]"); if (!b) return; const a = Math.floor(Date.now() / 3600e3) * 3600e3; S.sel = null; setWin(a, a + (+b.dataset.q) * 3600e3); renderGrid(); });
+  $("#wcCopy").addEventListener("click", async () => { const s = summaryText(); if (!s) return; try { await navigator.clipboard.writeText(s); $("#wcCopied").textContent = "Copied."; } catch { $("#wcCopied").textContent = s; } setTimeout(() => { $("#wcCopied").textContent = ""; }, 4000); });
+  $("#endpointSave").addEventListener("click", () => {
+    let v = $("#endpoint").value.trim();
+    if (v) { try { const u = new URL(v); if (u.protocol !== "https:") throw 0; if (u.pathname === "/" || !u.pathname) u.pathname = "/api/observations"; v = u.toString(); } catch { $("#endpointNote").textContent = "Enter a full https:// address."; return; } }
+    S.endpoint = v; $("#endpoint").value = v; store.set("winds.endpoint", v || null); refreshLive();
+  });
 }
 
+// ---------- load
+async function loadBoard(first) {
+  let d;
+  const errs = [];
+  for (const u of DATA_URLS) {
+    try { d = await getJSON(u + (u.includes("raw.githubusercontent") ? "" : "?t=" + Date.now()), 30000); break; }
+    catch (e) { errs.push(`${new URL(u).hostname}: ${e.name === "AbortError" ? "timed out" : e.message}`); }
+  }
+  if (!d) { if (first) $("#banners").innerHTML = `<div class="banner bad">Couldn’t load the 7-Day board’s guidance (${esc(errs.join("; "))}). The forecast needs it; the live readings still work.</div>`; return; }
+  if (!first && S.board && d.generated_unix === S.board.generated_unix) { header(); return; }
+  S.board = d; TZ = (d.site && d.site.display_tz) || TZ;
+  S.std = { xw: d.constraints.crosswind_kt, hw: d.constraints.headtail_kt, tw: null };
+  if (first) {
+    let lim = null; try { lim = JSON.parse(store.get("winds.lim") || "null"); } catch {}
+    S.lim = lim && Number.isFinite(lim.xw) ? { xw: lim.xw, hw: lim.hw ?? null, tw: lim.tw ?? null } : { ...S.std };
+    limUI();
+  }
+  let off; try { off = new Set(JSON.parse(store.get("winds.off") ?? store.get("board.off") ?? "[]")); } catch { off = new Set(); }
+  for (const s of d.sources) if (!(s.id in S.enabled)) S.enabled[s.id] = !off.has(s.id);
+  header(); renderSources(); recompute();
+}
 (function init() {
   S.rwy = ["either", "33", "15"].includes(store.get("winds.rwy")) ? store.get("winds.rwy") : "either";
   S.basis = ["gust", "spd"].includes(store.get("winds.basis")) ? store.get("winds.basis") : "gust";
   S.obsSrc = ["worst", "0511", "0512", "0513", "ktts"].includes(store.get("winds.obs")) ? store.get("winds.obs") : "worst";
   const q = new URLSearchParams(location.search).get("obs"); if (["worst", "0511", "0512", "0513", "ktts"].includes(q)) S.obsSrc = q;
+  S.layout = ["3h", "6h", "std"].includes(store.get("winds.layout")) ? store.get("winds.layout") : "3h";
   S.zone = store.get("winds.zone") === "z" ? "z" : "local";
+  // reuse the ER Weather COP's minute data service if it is set up in this browser (same site)
+  let ep = store.get("winds.endpoint");
+  if (ep == null) { try { ep = (JSON.parse(store.get("er-cop-settings") || "{}").dataEndpoint) || ""; } catch { ep = ""; } }
+  S.endpoint = ep || "";
+  S.svc = svcBase(store.get("winds.svc") || "") || "";
   S.hHours = [2, 4, 6, 12].includes(+store.get("winds.hhrs")) ? +store.get("winds.hhrs") : 4;
   S.hComp = store.get("winds.hcomp") === "al" ? "al" : "xw";
   S.hSm = store.get("winds.hsm") === "1" ? 1 : 10;
-  let limits;try{limits=JSON.parse(store.get('winds.lim')||'null');}catch{}
-  if(limits&&Number.isFinite(limits.xw)&&limits.xw>=0&&limits.xw<=60)S.lim={xw:limits.xw,hw:Number.isFinite(limits.hw)?Math.max(0,Math.min(60,limits.hw)):null,tw:Number.isFinite(limits.tw)?Math.max(0,Math.min(60,limits.tw)):null};
-  $("#rwy").value=S.rwy;$("#basis").value=S.basis;$("#obsSrc").value=S.obsSrc;
-  limUI();segUI();bind();drawRose(null);
+  $("#svc").value = S.svc;
+  $("#endpoint").value = S.endpoint; $("#rwy").value = S.rwy; $("#basis").value = S.basis; $("#obsSrc").value = S.obsSrc; $("#layout").value = S.layout;
+  { let lim = null; try { lim = JSON.parse(store.get("winds.lim") || "null"); } catch {} if (lim && Number.isFinite(lim.xw)) S.lim = { xw: lim.xw, hw: lim.hw ?? null, tw: lim.tw ?? null }; }
+  limUI(); segUI(); bind(); drawRose(null);
+  let w = null; try { w = JSON.parse(store.get("winds.win") || "null"); } catch {}
+  const a0 = Math.floor(Date.now() / 3600e3) * 3600e3;
+  S.win = w && w.b > Date.now() ? w : { a: a0, b: a0 + 3 * 3600e3 };
+  $("#wcStart").value = toInput(S.win.a); $("#wcEnd").value = toInput(S.win.b);
   refreshLive(); setInterval(refreshLive, LIVE_MS);
-  setInterval(renderAll,30000);
+  loadBoard(true); setInterval(() => loadBoard(false), BOARD_MS);
+  setInterval(() => { if (S.board) { header(); renderChart(); } }, 5 * 60e3);
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
 })();
 </script>
 </body>
 </html>
-
